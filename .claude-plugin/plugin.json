@@ -1,0 +1,10 @@
+{
+  "name": "bipolar",
+  "version": "0.1.0",
+  "description": "Delegate agentic coding tasks from Claude Code to a big local model served by bipolar-code (llama.cpp multi-GPU).",
+  "author": {
+    "name": "Santiago Quiroz Upegui"
+  },
+  "repository": "https://github.com/santiquiroz/bipolar-plugin-cc",
+  "license": "MIT"
+}

@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "bipolar-code plugin for Claude Code: delegate agentic tasks to a big local model on your LAN.",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "bipolar",
       "description": "Delegate agentic coding tasks from Claude Code to a big local model served by bipolar-code (llama.cpp multi-GPU).",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Santiago Quiroz Upegui"
       },

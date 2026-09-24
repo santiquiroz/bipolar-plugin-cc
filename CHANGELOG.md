@@ -6,6 +6,12 @@
   `X-Bipolar-Depth` (it was hardcoded to 0) and, like `bipolar-rescue`, refuses
   to run inside a delegated session. `bipolar-rescue` marks its child with
   `BIPOLAR_DELEGATION_DEPTH=1`. Hermetic tests for these shell blocks in `tests/`.
+- `bipolar-rescue` hands the task to `claude -p` on stdin through a single-quoted
+  heredoc (`<<'EOF_TASK'`) instead of inlining it in double quotes, so pasted
+  code with backticks, `$VAR` or `$(...)` is no longer run or mangled by the
+  shell, and long tasks avoid the command-line length limit. The child also gets
+  `GIT_TERMINAL_PROMPT=0` and `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` so git
+  never hangs waiting for credentials.
 
 ## 0.2.0 — 2026-09-10
 

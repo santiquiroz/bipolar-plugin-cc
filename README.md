@@ -5,7 +5,9 @@ Claude Code plugin that delegates coding work to [bipolar-code](https://github.c
 1. **`bipolar-rescue`** — a headless Claude Code instance pointed at the **big local model** bipolar-code serves (managed llama.cpp, multi-GPU, Anthropic Messages API native):
 
    ```bash
-   ANTHROPIC_BASE_URL=http://<server>:8000 ANTHROPIC_API_KEY=<key> claude -p "<task>" ...
+   ANTHROPIC_BASE_URL=http://<server>:8000 ANTHROPIC_API_KEY=<key> claude -p ... <<'EOF_TASK'
+   <task>
+   EOF_TASK
    ```
 
    The delegate reads and edits files itself, unlike plain text-completion delegates. Free, zero-quota, LAN-wide.

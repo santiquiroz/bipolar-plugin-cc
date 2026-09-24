@@ -3,14 +3,22 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections import namedtuple
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 FENCED_BASH = re.compile(r"^```bash\n(.*?)^```", re.MULTILINE | re.DOTALL)
 FAKES = r"""
 curl() { printf 'curl %s\n' "$*" >> "$FAKE_LOG"; printf '{"status":"ok"}'; }
-claude() { printf 'claude depth=%s\n' "${BIPOLAR_DELEGATION_DEPTH-unset}" >> "$FAKE_LOG"; }
+claude() {
+  printf 'claude depth=%s\n' "${BIPOLAR_DELEGATION_DEPTH-unset}" >> "$FAKE_LOG"
+  printf 'claude GIT_TERMINAL_PROMPT=%s\n' "${GIT_TERMINAL_PROMPT-unset}" >> "$FAKE_LOG"
+  printf 'claude GIT_SSH_COMMAND=%s\n' "${GIT_SSH_COMMAND-unset}" >> "$FAKE_LOG"
+  printf '%s\0' "$@" > "$FAKE_CLAUDE_ARGS"
+  cat > "$FAKE_CLAUDE_STDIN"
+}
 """
+FakeRun = namedtuple("FakeRun", "completed calls claude_args claude_stdin")
 
 
 def bash_blocks(relative_path):
@@ -43,24 +51,46 @@ def _git_for_windows_bash():
     return None
 
 
-def isolated_env(home, log, depth=None):
-    env = {key: value for key, value in os.environ.items() if not key.startswith("BIPOLAR_")}
-    env.update(HOME=home, FAKE_LOG=log, BIPOLAR_URL="http://bipolar.invalid:8000", BIPOLAR_API_KEY="test-key")
+def isolated_env(home, depth=None):
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("BIPOLAR_", "GIT_"))}
+    env.update(
+        HOME=home,
+        FAKE_LOG=os.path.join(home, "fake.log"),
+        FAKE_CLAUDE_ARGS=os.path.join(home, "claude.args"),
+        FAKE_CLAUDE_STDIN=os.path.join(home, "claude.stdin"),
+        BIPOLAR_URL="http://bipolar.invalid:8000",
+        BIPOLAR_API_KEY="test-key",
+    )
     if depth is not None:
         env["BIPOLAR_DELEGATION_DEPTH"] = depth
     return env
 
 
 def run_block(block, depth=None):
+    run = run_with_fakes(block, depth)
+    return run.completed, run.calls
+
+
+def run_with_fakes(block, depth=None):
     with tempfile.TemporaryDirectory() as home:
-        log = os.path.join(home, "fake.log")
-        Path(log).touch()
+        env = isolated_env(home, depth)
+        for name in ("FAKE_LOG", "FAKE_CLAUDE_ARGS", "FAKE_CLAUDE_STDIN"):
+            Path(env[name]).touch()
         completed = subprocess.run(
             [find_bash(), "-c", FAKES + block],
-            env=isolated_env(home, log, depth),
+            env=env,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        calls = Path(log).read_text(encoding="utf-8").splitlines()
-    return completed, calls
+        return FakeRun(
+            completed=completed,
+            calls=_read_text(env["FAKE_LOG"]).splitlines(),
+            claude_args=[arg for arg in _read_text(env["FAKE_CLAUDE_ARGS"]).split("\0") if arg],
+            claude_stdin=_read_text(env["FAKE_CLAUDE_STDIN"]),
+        )
+
+
+def _read_text(path):
+    return Path(path).read_bytes().decode("utf-8")

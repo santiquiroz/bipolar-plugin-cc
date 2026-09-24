@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 from collections import namedtuple
@@ -23,6 +24,8 @@ claude() {
 }
 """
 FakeRun = namedtuple("FakeRun", "completed calls claude_args claude_stdin curl_body")
+PROXY_VARIABLES = ("http_proxy", "https_proxy", "all_proxy", "no_proxy")
+BLOCK_TIMEOUT_S = 120
 
 
 def bash_blocks(relative_path):
@@ -81,14 +84,7 @@ def run_with_fakes(block, depth=None):
         env = isolated_env(home, depth)
         for name in ("FAKE_LOG", "FAKE_CLAUDE_ARGS", "FAKE_CLAUDE_STDIN", "FAKE_CURL_BODY"):
             Path(env[name]).touch()
-        completed = subprocess.run(
-            [find_bash(), "-c", FAKES + block],
-            env=env,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        completed = run_bash(FAKES + block, env)
         return FakeRun(
             completed=completed,
             calls=_read_text(env["FAKE_LOG"]).splitlines(),
@@ -96,6 +92,40 @@ def run_with_fakes(block, depth=None):
             claude_stdin=_read_text(env["FAKE_CLAUDE_STDIN"]),
             curl_body=_read_text(env["FAKE_CURL_BODY"]),
         )
+
+
+def run_with_real_curl(block, **overrides):
+    with tempfile.TemporaryDirectory() as home:
+        env = {key: value for key, value in isolated_env(home).items() if key.lower() not in PROXY_VARIABLES}
+        env.update(overrides)
+        return run_bash(block, env)
+
+
+def run_bash(script, env):
+    process = subprocess.Popen(
+        [find_bash(), "-c", script],
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=os.name != "nt",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=BLOCK_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        _kill_tree(process.pid)
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+
+
+def _kill_tree(pid):
+    # Git for Windows' bin/bash.exe is a launcher: killing only it leaves the real bash holding the pipes
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True)
+    else:
+        os.killpg(pid, signal.SIGKILL)
 
 
 def _read_text(path):

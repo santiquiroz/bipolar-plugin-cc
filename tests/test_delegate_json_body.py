@@ -73,6 +73,17 @@ class DelegateJsonBodyTest(unittest.TestCase):
             "task": TRICKY_TASK, "workspace": WORKSPACE, "mode": "task", "agent_id": "claude",
         })
 
+    def test_timeout_flag_adds_an_integer_timeout_s(self):
+        run = run_with_fakes(submit_block(TIMEOUT_S="1800"))
+
+        self.assertEqual(posted_body(run)["timeout_s"], 1800)
+
+    def test_python_adds_the_same_integer_timeout_s(self):
+        run = run_with_fakes("node() { return 127; }\n" + submit_block(TIMEOUT_S="1800"))
+
+        self.assertEqual(run.completed.returncode, 0, run.completed.stderr)
+        self.assertEqual(posted_body(run)["timeout_s"], 1800)
+
     def test_temporary_files_are_removed_after_posting(self):
         run = run_with_fakes(submit_block())
 

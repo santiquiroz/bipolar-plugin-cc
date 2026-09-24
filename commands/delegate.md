@@ -1,6 +1,6 @@
 ---
 description: Delegate a coding task to the best available CLI agent through bipolar-code's delegation broker (claude, codex, copilot, agy or ollama picked by tier and quota)
-argument-hint: "[--workspace <abs path>] [--agent claude|codex|copilot|antigravity|ollama] [--mode task|text] [--tier trivial|simple|standard|complex] [--dry-run] <task>"
+argument-hint: "[--workspace <abs path>] [--agent claude|codex|copilot|antigravity|ollama] [--mode task|text] [--tier trivial|simple|standard|complex] [--timeout <s>] [--dry-run] <task>"
 allowed-tools: Bash
 ---
 
@@ -9,7 +9,7 @@ Send the task to bipolar-code's delegation broker (`POST /api/delegate/jobs`, bi
 Raw user request:
 $ARGUMENTS
 
-Parse the flags out of the request; everything else is the task text. Defaults: `--workspace` = the current working directory (absolute path), `--mode task`, no `--agent` (auto), no `--tier` (classifier decides), no `--dry-run`.
+Parse the flags out of the request; everything else is the task text. Defaults: `--workspace` = the current working directory (absolute path), `--mode task`, no `--agent` (auto), no `--tier` (classifier decides), no `--timeout` (each agent's own limit on the server, e.g. 900 s for codex), no `--dry-run`. `--timeout <s>` is the per-attempt limit in seconds the broker accepts as `timeout_s`: a whole number from 60 to 3600; anything else → tell the user the valid range and stop before submitting.
 
 Step 1 — Config and health (one Bash call):
 
@@ -37,32 +37,34 @@ cat > "$TASK_FILE" <<'EOF_TASK'
 <task text, verbatim>
 EOF_TASK
 WORKSPACE='<abs path>'
-MODE=task AGENT= TIER= DRY_RUN=
+MODE=task AGENT= TIER= DRY_RUN= TIMEOUT_S=
 BODY_JS='const fs = require("fs");
-const [taskFile, bodyFile, workspace, mode, agent, tier, dryRun] = process.argv.slice(1);
+const [taskFile, bodyFile, workspace, mode, agent, tier, dryRun, timeoutS] = process.argv.slice(1);
 const text = fs.readFileSync(taskFile, "utf8");
 const body = { task: text.endsWith("\n") ? text.slice(0, -1) : text, workspace, mode };
 if (agent) body.agent_id = agent;
 if (tier) body.tier_hint = tier;
 if (dryRun) body.dry_run = true;
+if (timeoutS) body.timeout_s = Number(timeoutS);
 fs.writeFileSync(bodyFile, JSON.stringify(body));'
 BODY_PY='import json, sys
-task_file, body_file, workspace, mode, agent, tier, dry_run = sys.argv[1:8]
+task_file, body_file, workspace, mode, agent, tier, dry_run, timeout_s = sys.argv[1:9]
 text = open(task_file, encoding="utf-8", newline="").read()
 body = {"task": text[:-1] if text.endswith("\n") else text, "workspace": workspace, "mode": mode}
 body.update({key: value for key, value in (("agent_id", agent), ("tier_hint", tier)) if value})
 body.update({"dry_run": True} if dry_run else {})
+body.update({"timeout_s": int(timeout_s)} if timeout_s else {})
 json.dump(body, open(body_file, "w", encoding="utf-8"))'
 build_body() {
   node -e "$BODY_JS" "$@" 2>/dev/null || python3 -c "$BODY_PY" "$@" 2>/dev/null || python -c "$BODY_PY" "$@"
 }
-build_body "$TASK_FILE" "$BODY" "$WORKSPACE" "$MODE" "$AGENT" "$TIER" "$DRY_RUN" || { echo "could not build the JSON body: needs node or python"; exit 79; }
+build_body "$TASK_FILE" "$BODY" "$WORKSPACE" "$MODE" "$AGENT" "$TIER" "$DRY_RUN" "$TIMEOUT_S" || { echo "could not build the JSON body: needs node or python"; exit 79; }
 curl -s -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" -H "X-Bipolar-Depth: ${BIPOLAR_DELEGATION_DEPTH:-0}" \
   --data-binary @"$BODY" \
   "$BIPOLAR_URL/api/delegate/jobs"
 ```
 
-- Set `MODE=text`, `AGENT=<id>`, `TIER=<tier>` or `DRY_RUN=1` only when the matching flag was given; empty values stay out of the body. Forward slashes in the workspace path work on Windows; if the path contains an apostrophe, write it as `'\''`.
+- Set `MODE=text`, `AGENT=<id>`, `TIER=<tier>`, `TIMEOUT_S=<s>` or `DRY_RUN=1` only when the matching flag was given; empty values stay out of the body. Forward slashes in the workspace path work on Windows; if the path contains an apostrophe, write it as `'\''`.
 - The heredoc delimiter must not occur anywhere in the task text. Use `EOF_TASK` unless the task contains that string; then pick another (e.g. `EOF_TASK_7f3a`) for both the opening `<<'...'` and the closing line.
 - Exit 79 → neither node nor python could run; report it and stop. The temporary directory is removed when the call ends.
 
@@ -73,19 +75,50 @@ Interpret the response:
 - 400 `workspace_not_allowed` / `workspace_allowlist_empty` → the workspace is not in bipolar-code's allow-list; tell the user to add the path in Agentes → Workspaces permitidos. Stop.
 - 400 `no_agent_available` → show `reasons` and `skipped` (each entry says why an agent was skipped: `disabled`, `not_installed`, `exhausted:quota_exhausted`, `busy`, `tier_unsupported`, `agy_deny_list_missing`). Stop; the caller decides another lane.
 - 409 `delegation_disabled` / `recursion_guard`, 429 `too_many_jobs` → report verbatim and stop.
+- 422 → the broker rejected a field (e.g. `timeout_s` outside 60-3600); report its `detail` and stop.
 
-Step 3 — Follow the job. Poll every 5 s for up to the job timeout (default 10 min):
+Step 3 — Follow the job. Run this block with the Bash tool's `timeout` set to `600000` (its maximum): the default 120000 ms would kill it after two minutes. One call is a segment of at most 9 minutes; jobs can run far longer (each attempt up to its agent's limit or `timeout_s`, up to 3 attempts with failover, plus time `queued` behind other jobs), so keep re-running the same block while it exits 75.
 
 ```bash
-for i in $(seq 1 120); do
-  R=$(curl -s -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/delegate/jobs/<id>")
-  S=$(printf '%s' "$R" | grep -o '"status":"[a-z_]*"' | head -1 | cut -d'"' -f4)
-  case "$S" in queued|running) sleep 5;; *) break;; esac
+[ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
+JOB_URL="$BIPOLAR_URL/api/delegate/jobs/<id>"
+POLL_S=5 SEGMENT_S=540 MAX_FAILS=3
+STATUS_RE='"status" *: *"([a-z_]+)"'
+fetch_job() {
+  curl -s --max-time 20 -w '\n%{http_code}' -H "x-api-key: $BIPOLAR_API_KEY" "$JOB_URL"
+}
+DEADLINE=$((SECONDS + SEGMENT_S)) FAILS=0
+while :; do
+  R=$(fetch_job)
+  CODE=${R##*$'\n'} R=${R%$'\n'*}
+  [ "$CODE" = 404 ] && { echo "job lost: the server no longer knows it (HTTP 404; bipolar-code restarted and jobs live in memory)"; exit 76; }
+  S= FAILS=$((FAILS + 1))
+  [[ $R =~ $STATUS_RE ]] && S=${BASH_REMATCH[1]} FAILS=0
+  case "$S" in
+    queued|running) ;;
+    "") [ "$FAILS" -lt "$MAX_FAILS" ] || { printf '%s\n' "$R"; echo "status unreadable $FAILS times in a row (last HTTP $CODE)"; exit 74; } ;;
+    *) printf '%s\n' "$R"; exit 0 ;;
+  esac
+  [ "$SECONDS" -lt "$DEADLINE" ] || { printf '%s\n' "$R"; echo "job still ${S:-unconfirmed} after this segment: run this block again"; exit 75; }
+  sleep "$POLL_S"
 done
-printf '%s\n' "$R"
 ```
 
-Step 4 — Report. From the final job JSON give: `status` (`succeeded`, `failed`, `timeout`, `cancelled`, `quota`, `auth_error`), `agent_id` and `model`, one line per attempt (`agent_id`, `signal`, `duration_s`, `error`), `files_touched`, and `output_tail` verbatim. When `status` is `quota`, say which agents were tried and what the last quota excerpt was; the caller decides whether another lane or inline work follows. When the output is truncated, offer `GET /api/delegate/jobs/<id>/output` for the full log.
+- Exit 0 → the last line is the final job JSON; go to step 4.
+- Exit 75 → the job is still `queued` or `running`: run the same block again (again with `timeout: 600000`). Tell the user it is still going after each segment.
+- Exit 74 → the status could not be read three times in a row (network error, server down or a non-JSON reply). The job may still be running on the server: report it with the last HTTP code and ask the user whether to keep waiting (re-run the block) or cancel it.
+- Exit 76 → job lost: bipolar-code restarted, so the job and its log are gone and its CLI may have stopped halfway through an edit. Tell the user to check `git status` in the workspace before resubmitting.
+
+Cancel — when the user asks to stop, or wants to give up on a job that is still `queued` or `running`, cancel it instead of just stopping the polling (otherwise the delegate keeps editing the working tree):
+
+```bash
+[ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
+curl -s -X DELETE -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/delegate/jobs/<id>"
+```
+
+The reply is the job with `status: cancelled`; the broker kills the agent's process tree. Edits already made stay in the working tree: tell the user to review `git status` / `git diff`. A 404 means the job is already gone.
+
+Step 4 — Report. From the final job JSON give: `status` (`succeeded`, `failed`, `timeout`, `cancelled`, `quota`, `auth_error`), `agent_id` and `model`, one line per attempt (`agent_id`, `signal`, `duration_s`, `error`), `files_touched`, and `output_tail` verbatim; when `output_tail` is empty, give the job's `error` instead. When `status` is `quota`, say which agents were tried and what the last quota excerpt was; the caller decides whether another lane or inline work follows. When the output is truncated, offer `GET /api/delegate/jobs/<id>/output` for the full log.
 
 Rules:
 

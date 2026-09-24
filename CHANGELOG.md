@@ -17,6 +17,14 @@
   Python's `json` as a fallback) serializes the body with only the fields the
   flags ask for, and `curl --data-binary @file` posts it. An apostrophe in the
   task no longer breaks the request or runs the rest of the task as shell.
+- `/bipolar:delegate` follows jobs that outlast one Bash call: the polling block
+  runs with a 600000 ms tool timeout in segments of at most 9 minutes and is
+  re-run while the job is `queued` or `running` (it used to die at the default
+  2 minutes and give up after 10). A failed status read is retried up to 3
+  times in a row instead of ending the loop, and a 404 is reported as a job
+  lost to a server restart. New `--timeout <s>` flag (`timeout_s`, 60-3600),
+  a documented cancel (`DELETE /api/delegate/jobs/<id>`), and the report shows
+  the job's `error` when `output_tail` is empty.
 
 ## 0.2.0 — 2026-09-10
 

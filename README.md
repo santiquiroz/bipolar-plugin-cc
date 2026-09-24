@@ -48,10 +48,10 @@ Then configure once per machine:
 ## Use
 
 - `/bipolar:rescue <well-specified task>` — headless Claude Code on the local big model, in the current repo.
-- `/bipolar:delegate <task>` — the broker picks the agent. Flags: `--workspace <abs path>` (default: current directory; must be in the server's allow-list), `--agent claude|codex|copilot|antigravity|ollama` to pin one, `--mode text` for an answer without file access, `--tier trivial|simple|standard|complex` to override the classifier, `--dry-run` to see the choice without running.
+- `/bipolar:delegate <task>` — the broker picks the agent. Flags: `--workspace <abs path>` (default: current directory; must be in the server's allow-list), `--agent claude|codex|copilot|antigravity|ollama` to pin one, `--mode text` for an answer without file access, `--tier trivial|simple|standard|complex` to override the classifier, `--timeout <s>` to set the per-attempt limit (`timeout_s`, 60-3600 s; default: each agent's own), `--dry-run` to see the choice without running.
 - Or let the `bipolar-rescue` subagent fire proactively (see `docs/claude-md-snippet.md` for delegation rules to paste into your `~/.claude/CLAUDE.md`).
 
-What `/bipolar:delegate` reports: job status (`succeeded`, `failed`, `timeout`, `quota`, `auth_error`), the agent and model used, one line per attempt with the quota signal that caused a failover, `files_touched` and the agent's final output. A `quota` status means every eligible agent of that tier is exhausted; the caller picks another lane.
+What `/bipolar:delegate` reports: job status (`succeeded`, `failed`, `timeout`, `cancelled`, `quota`, `auth_error`), the agent and model used, one line per attempt with the quota signal that caused a failover, `files_touched` and the agent's final output (or the job's `error` when there is none). A `quota` status means every eligible agent of that tier is exhausted; the caller picks another lane. Long jobs are followed in segments of up to 9 minutes (one Bash call each, with a 600000 ms timeout) until they finish; asking to stop cancels the job on the server (`DELETE /api/delegate/jobs/<id>`) so it stops editing the working tree.
 
 ## Notes
 

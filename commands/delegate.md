@@ -25,15 +25,48 @@ curl -s -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/health"
 - Exit 77 → recursion guard: this session is itself a delegate. Report the message verbatim and stop; never work around it (unsetting the variable, sending depth 0, calling the API another way).
 - Health must report `"version":"2.13` or newer and `"delegation_enabled":true`. Older server → tell the user to update bipolar-code. `delegation_enabled:false` → tell the user to enable it in bipolar-code → Agentes (switch "Delegación a agentes CLI" + workspaces permitidos) and stop.
 
-Step 2 — Submit. Build the JSON body yourself (escape quotes, backslashes and newlines in the task; forward slashes in the workspace path work on Windows) and post it. Keep the `X-Bipolar-Depth` header exactly as written: it forwards the inherited depth so the broker's own guard refuses nested jobs.
+Step 2 — Submit. Copy this block exactly and fill in only the task (verbatim, inside the heredoc — the closing `EOF_TASK` must stay alone at column 0), the workspace and the option variables. Never type the JSON yourself: the task is written to a temporary file through a single-quoted heredoc, serialized by `node` (or Python's `json` when node is missing) and posted with `--data-binary @file`, so apostrophes, quotes, backticks, `$VAR`, `$(...)` and newlines reach the broker intact. Keep the `X-Bipolar-Depth` header exactly as written: it forwards the inherited depth so the broker's own guard refuses nested jobs.
 
 ```bash
+BODY_DIR=$(mktemp -d) || exit 1
+trap 'rm -rf "$BODY_DIR"' EXIT
+# Native node/python/curl on Windows cannot open Git Bash's /tmp paths
+command -v cygpath >/dev/null && BODY_DIR=$(cygpath -m "$BODY_DIR")
+TASK_FILE="$BODY_DIR/task.txt" BODY="$BODY_DIR/body.json"
+cat > "$TASK_FILE" <<'EOF_TASK'
+<task text, verbatim>
+EOF_TASK
+WORKSPACE='<abs path>'
+MODE=task AGENT= TIER= DRY_RUN=
+BODY_JS='const fs = require("fs");
+const [taskFile, bodyFile, workspace, mode, agent, tier, dryRun] = process.argv.slice(1);
+const text = fs.readFileSync(taskFile, "utf8");
+const body = { task: text.endsWith("\n") ? text.slice(0, -1) : text, workspace, mode };
+if (agent) body.agent_id = agent;
+if (tier) body.tier_hint = tier;
+if (dryRun) body.dry_run = true;
+fs.writeFileSync(bodyFile, JSON.stringify(body));'
+BODY_PY='import json, sys
+task_file, body_file, workspace, mode, agent, tier, dry_run = sys.argv[1:8]
+text = open(task_file, encoding="utf-8", newline="").read()
+body = {"task": text[:-1] if text.endswith("\n") else text, "workspace": workspace, "mode": mode}
+body.update({key: value for key, value in (("agent_id", agent), ("tier_hint", tier)) if value})
+body.update({"dry_run": True} if dry_run else {})
+json.dump(body, open(body_file, "w", encoding="utf-8"))'
+build_body() {
+  node -e "$BODY_JS" "$@" 2>/dev/null || python3 -c "$BODY_PY" "$@" 2>/dev/null || python -c "$BODY_PY" "$@"
+}
+build_body "$TASK_FILE" "$BODY" "$WORKSPACE" "$MODE" "$AGENT" "$TIER" "$DRY_RUN" || { echo "could not build the JSON body: needs node or python"; exit 79; }
 curl -s -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" -H "X-Bipolar-Depth: ${BIPOLAR_DELEGATION_DEPTH:-0}" \
-  -d '{"task":"<task text>","workspace":"<abs path>","mode":"task"}' \
+  --data-binary @"$BODY" \
   "$BIPOLAR_URL/api/delegate/jobs"
 ```
 
-Add `"agent_id"`, `"tier_hint"`, `"mode":"text"` or `"dry_run":true` only when the matching flag was given. Interpret the response:
+- Set `MODE=text`, `AGENT=<id>`, `TIER=<tier>` or `DRY_RUN=1` only when the matching flag was given; empty values stay out of the body. Forward slashes in the workspace path work on Windows; if the path contains an apostrophe, write it as `'\''`.
+- The heredoc delimiter must not occur anywhere in the task text. Use `EOF_TASK` unless the task contains that string; then pick another (e.g. `EOF_TASK_7f3a`) for both the opening `<<'...'` and the closing line.
+- Exit 79 → neither node nor python could run; report it and stop. The temporary directory is removed when the call ends.
+
+Interpret the response:
 
 - 200 with `dry_run` → report the chosen `agent_id`, `model`, `tier` and `skipped` list; stop.
 - 202 → note the `id` and continue.

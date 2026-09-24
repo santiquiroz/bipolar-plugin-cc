@@ -12,6 +12,11 @@
   shell, and long tasks avoid the command-line length limit. The child also gets
   `GIT_TERMINAL_PROMPT=0` and `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` so git
   never hangs waiting for credentials.
+- `/bipolar:delegate` no longer types the job's JSON inline in `-d '...'`: the
+  task goes through a single-quoted heredoc into a temporary file, `node` (or
+  Python's `json` as a fallback) serializes the body with only the fields the
+  flags ask for, and `curl --data-binary @file` posts it. An apostrophe in the
+  task no longer breaks the request or runs the rest of the task as shell.
 
 ## 0.2.0 — 2026-09-10
 

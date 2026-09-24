@@ -28,6 +28,7 @@ Claude Code plugin that delegates coding work to [bipolar-code](https://github.c
 
 - A machine running bipolar-code (≥ 2.10 for `bipolar-rescue`, ≥ 2.13 for `/bipolar:delegate`) with the `llamacpp` provider active and a model loaded, or with the delegation broker enabled (Agentes → switch + workspaces permitidos).
 - `claude` CLI on the delegating machine.
+- `node` or Python 3 on the delegating machine for `/bipolar:delegate` (it serializes the job's JSON body; `jq` is not needed).
 
 ## Install
 

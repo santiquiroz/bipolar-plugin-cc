@@ -9,7 +9,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 FENCED_BASH = re.compile(r"^```bash\n(.*?)^```", re.MULTILINE | re.DOTALL)
 FAKES = r"""
-curl() { printf 'curl %s\n' "$*" >> "$FAKE_LOG"; printf '{"status":"ok"}'; }
+curl() {
+  printf 'curl %s\n' "$*" >> "$FAKE_LOG"
+  for arg in "$@"; do case "$arg" in @*) cat "${arg#@}" > "$FAKE_CURL_BODY";; esac; done
+  printf '{"status":"ok"}'
+}
 claude() {
   printf 'claude depth=%s\n' "${BIPOLAR_DELEGATION_DEPTH-unset}" >> "$FAKE_LOG"
   printf 'claude GIT_TERMINAL_PROMPT=%s\n' "${GIT_TERMINAL_PROMPT-unset}" >> "$FAKE_LOG"
@@ -18,7 +22,7 @@ claude() {
   cat > "$FAKE_CLAUDE_STDIN"
 }
 """
-FakeRun = namedtuple("FakeRun", "completed calls claude_args claude_stdin")
+FakeRun = namedtuple("FakeRun", "completed calls claude_args claude_stdin curl_body")
 
 
 def bash_blocks(relative_path):
@@ -58,6 +62,7 @@ def isolated_env(home, depth=None):
         FAKE_LOG=os.path.join(home, "fake.log"),
         FAKE_CLAUDE_ARGS=os.path.join(home, "claude.args"),
         FAKE_CLAUDE_STDIN=os.path.join(home, "claude.stdin"),
+        FAKE_CURL_BODY=os.path.join(home, "curl.body"),
         BIPOLAR_URL="http://bipolar.invalid:8000",
         BIPOLAR_API_KEY="test-key",
     )
@@ -74,7 +79,7 @@ def run_block(block, depth=None):
 def run_with_fakes(block, depth=None):
     with tempfile.TemporaryDirectory() as home:
         env = isolated_env(home, depth)
-        for name in ("FAKE_LOG", "FAKE_CLAUDE_ARGS", "FAKE_CLAUDE_STDIN"):
+        for name in ("FAKE_LOG", "FAKE_CLAUDE_ARGS", "FAKE_CLAUDE_STDIN", "FAKE_CURL_BODY"):
             Path(env[name]).touch()
         completed = subprocess.run(
             [find_bash(), "-c", FAKES + block],
@@ -89,6 +94,7 @@ def run_with_fakes(block, depth=None):
             calls=_read_text(env["FAKE_LOG"]).splitlines(),
             claude_args=[arg for arg in _read_text(env["FAKE_CLAUDE_ARGS"]).split("\0") if arg],
             claude_stdin=_read_text(env["FAKE_CLAUDE_STDIN"]),
+            curl_body=_read_text(env["FAKE_CURL_BODY"]),
         )
 
 

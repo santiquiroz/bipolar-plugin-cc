@@ -31,6 +31,13 @@
   MCP servers), `--max-turns 50` (the broker's cap) and `Skill` added to
   `--disallowedTools`. The child runs under `timeout 570`, below the Bash
   tool's 600 s ceiling, and exit 124 is reported as a partial result.
+- `/bipolar:delegate` computes the default workspace in the server's native
+  form (`pwd -W`, then `cygpath -m`, then `pwd`): Git Bash's `/c/...` was
+  rejected by a Windows server as `workspace_not_absolute`. The error table now
+  covers every `workspace_*` code the broker returns (`workspace_required`,
+  `workspace_not_absolute`, `workspace_missing`, `workspace_not_dir`,
+  `workspace_forbidden`) with its action, and the docs say that `--mode task`
+  needs the path to exist on the server host (from another PC: `--mode text`).
 
 ## 0.2.0 — 2026-09-10
 

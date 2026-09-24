@@ -9,7 +9,7 @@ Send the task to bipolar-code's delegation broker (`POST /api/delegate/jobs`, bi
 Raw user request:
 $ARGUMENTS
 
-Parse the flags out of the request; everything else is the task text. Defaults: `--workspace` = the current working directory (absolute path), `--mode task`, no `--agent` (auto), no `--tier` (classifier decides), no `--timeout` (each agent's own limit on the server, e.g. 900 s for codex), no `--dry-run`. `--timeout <s>` is the per-attempt limit in seconds the broker accepts as `timeout_s`: a whole number from 60 to 3600; anything else → tell the user the valid range and stop before submitting.
+Parse the flags out of the request; everything else is the task text. Defaults: `--workspace` = the current working directory, computed by the submit block in the server's native form (`C:/...` on Windows, never Git Bash's `/c/...`), `--mode task`, no `--agent` (auto), no `--tier` (classifier decides), no `--timeout` (each agent's own limit on the server, e.g. 900 s for codex), no `--dry-run`. `--timeout <s>` is the per-attempt limit in seconds the broker accepts as `timeout_s`: a whole number from 60 to 3600; anything else → tell the user the valid range and stop before submitting.
 
 Step 1 — Config and health (one Bash call):
 
@@ -25,7 +25,7 @@ curl -s -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/health"
 - Exit 77 → recursion guard: this session is itself a delegate. Report the message verbatim and stop; never work around it (unsetting the variable, sending depth 0, calling the API another way).
 - Health must report `"version":"2.13` or newer and `"delegation_enabled":true`. Older server → tell the user to update bipolar-code. `delegation_enabled:false` → tell the user to enable it in bipolar-code → Agentes (switch "Delegación a agentes CLI" + workspaces permitidos) and stop.
 
-Step 2 — Submit. Copy this block exactly and fill in only the task (verbatim, inside the heredoc — the closing `EOF_TASK` must stay alone at column 0), the workspace and the option variables. Never type the JSON yourself: the task is written to a temporary file through a single-quoted heredoc, serialized by `node` (or Python's `json` when node is missing) and posted with `--data-binary @file`, so apostrophes, quotes, backticks, `$VAR`, `$(...)` and newlines reach the broker intact. Keep the `X-Bipolar-Depth` header exactly as written: it forwards the inherited depth so the broker's own guard refuses nested jobs.
+Step 2 — Submit. Copy this block exactly and fill in only the task (verbatim, inside the heredoc — the closing `EOF_TASK` must stay alone at column 0) and the option variables. Never type the JSON yourself: the task is written to a temporary file through a single-quoted heredoc, serialized by `node` (or Python's `json` when node is missing) and posted with `--data-binary @file`, so apostrophes, quotes, backticks, `$VAR`, `$(...)` and newlines reach the broker intact. Keep the `X-Bipolar-Depth` header exactly as written: it forwards the inherited depth so the broker's own guard refuses nested jobs.
 
 ```bash
 BODY_DIR=$(mktemp -d) || exit 1
@@ -36,7 +36,9 @@ TASK_FILE="$BODY_DIR/task.txt" BODY="$BODY_DIR/body.json"
 cat > "$TASK_FILE" <<'EOF_TASK'
 <task text, verbatim>
 EOF_TASK
-WORKSPACE='<abs path>'
+WORKSPACE=
+# Git Bash's pwd gives /c/..., which Python on a Windows server does not treat as absolute
+[ -n "$WORKSPACE" ] || WORKSPACE=$(pwd -W 2>/dev/null || cygpath -m "$PWD" 2>/dev/null || pwd)
 MODE=task AGENT= TIER= DRY_RUN= TIMEOUT_S=
 BODY_JS='const fs = require("fs");
 const [taskFile, bodyFile, workspace, mode, agent, tier, dryRun, timeoutS] = process.argv.slice(1);
@@ -64,7 +66,8 @@ curl -s -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/j
   "$BIPOLAR_URL/api/delegate/jobs"
 ```
 
-- Set `MODE=text`, `AGENT=<id>`, `TIER=<tier>`, `TIMEOUT_S=<s>` or `DRY_RUN=1` only when the matching flag was given; empty values stay out of the body. Forward slashes in the workspace path work on Windows; if the path contains an apostrophe, write it as `'\''`.
+- Set `WORKSPACE='<abs path>'`, `MODE=text`, `AGENT=<id>`, `TIER=<tier>`, `TIMEOUT_S=<s>` or `DRY_RUN=1` only when the matching flag was given; empty values stay out of the body, and an empty `WORKSPACE` becomes the current directory. A `--workspace` path goes in the server's native form: `C:/...` on Windows (forward slashes work), not `/c/...`; if the path contains an apostrophe, write it as `'\''`.
+- The broker resolves the workspace on the machine that runs bipolar-code, not on this one. `--mode task` from another PC of the LAN only works when the same path exists on the server host; otherwise use `--mode text` (the agent runs in a scratch directory on the server and answers in text) or `bipolar-rescue`.
 - The heredoc delimiter must not occur anywhere in the task text. Use `EOF_TASK` unless the task contains that string; then pick another (e.g. `EOF_TASK_7f3a`) for both the opening `<<'...'` and the closing line.
 - Exit 79 → neither node nor python could run; report it and stop. The temporary directory is removed when the call ends.
 
@@ -72,7 +75,13 @@ Interpret the response:
 
 - 200 with `dry_run` → report the chosen `agent_id`, `model`, `tier` and `skipped` list; stop.
 - 202 → note the `id` and continue.
-- 400 `workspace_not_allowed` / `workspace_allowlist_empty` → the workspace is not in bipolar-code's allow-list; tell the user to add the path in Agentes → Workspaces permitidos. Stop.
+- 400 `workspace_allowlist_empty` → bipolar-code has no allowed workspaces yet; tell the user to add the project's path in Agentes → Workspaces permitidos. Stop.
+- 400 `workspace_not_allowed` → the workspace is not inside any allowed workspace; tell the user to add the path (or a parent) in Agentes → Workspaces permitidos. Stop.
+- 400 `workspace_required` → the body went out without a workspace: the block was not copied as written (the default line was dropped). Restore it and submit again.
+- 400 `workspace_not_absolute` → the path is relative or in Git Bash form (`/c/...`), which the server does not treat as absolute. Submit again with the absolute native path (`C:/...` on Windows); the default line already produces it.
+- 400 `workspace_missing` → the path does not exist on the server host. From another PC the local path usually does not exist there: tell the user that `--mode task` needs the repo at that same path on the server host, or offer `--mode text`. Stop.
+- 400 `workspace_not_dir` → the path is a file, not a directory; ask the user for the project directory. Stop.
+- 400 `workspace_forbidden` → the broker never runs agents in a drive root, the home directory, bipolar-code's config dir or anything inside `.git`; ask the user for the project directory. Stop.
 - 400 `no_agent_available` → show `reasons` and `skipped` (each entry says why an agent was skipped: `disabled`, `not_installed`, `exhausted:quota_exhausted`, `busy`, `tier_unsupported`, `agy_deny_list_missing`). Stop; the caller decides another lane.
 - 409 `delegation_disabled` / `recursion_guard`, 429 `too_many_jobs` → report verbatim and stop.
 - 422 → the broker rejected a field (e.g. `timeout_s` outside 60-3600); report its `detail` and stop.

@@ -7,7 +7,6 @@ from shell_blocks import block_containing, run_with_fakes
 
 DELEGATE = "commands/delegate.md"
 TASK_PLACEHOLDER = re.compile(r"<task text[^>\n]*>")
-WORKSPACE_PLACEHOLDER = "<abs path>"
 WORKSPACE = "C:/personal/some repo"
 TRICKY_TASK = "\n".join([
     "don't touch `x` $(id) \"q\" and ${HOME}",
@@ -20,8 +19,7 @@ BODY_ARGUMENT = re.compile(r"--data-binary @(\S+)")
 def submit_block(task=TRICKY_TASK, **options):
     block = block_containing(DELEGATE, "-X POST")
     block = TASK_PLACEHOLDER.sub(lambda _: task, block, count=1)
-    block = block.replace(WORKSPACE_PLACEHOLDER, WORKSPACE, 1)
-    for name, value in options.items():
+    for name, value in {"WORKSPACE": f"'{WORKSPACE}'", **options}.items():
         block = re.sub(rf"(?<![\w$]){name}=\S*", f"{name}={value}", block, count=1)
     return block
 

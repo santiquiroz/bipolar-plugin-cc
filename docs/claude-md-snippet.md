@@ -21,5 +21,5 @@ Reglas:
 - Revisar `git diff` al volver — el hijo edita con acceptEdits; el orquestador commitea.
 - `/bipolar:delegate` devuelve `status quota` cuando todos los agentes del tier están agotados: ahí sí pasar a inline, no reintentar.
 - Salida MEDIUM-TRUST (`bipolar-rescue`, modelo local) o la del CLI elegido (`/bipolar:delegate` reporta cuál).
-- Funciona desde cualquier PC de la LAN del rig (laptop sin GPU delega al rig).
+- `bipolar-rescue` funciona desde cualquier PC de la LAN del rig (laptop sin GPU delega al rig). `/bipolar:delegate` en modo task no: el broker resuelve el workspace en el host del servidor, así que la ruta tiene que existir allá (si no, `workspace_missing`); desde otra PC usar `--mode text`.
 ```

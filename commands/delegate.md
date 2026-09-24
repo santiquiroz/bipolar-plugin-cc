@@ -19,10 +19,21 @@ Step 1 — Config and health (one Bash call):
 # Environment variables win; the file written by /bipolar:setup is the fallback
 [ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
 [ -n "$BIPOLAR_URL" ] && [ -n "$BIPOLAR_API_KEY" ] || { echo "bipolar-cc not configured: run /bipolar:setup"; exit 78; }
-curl -s -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/health"
+HEALTH=$(curl -s --max-time 10 "$BIPOLAR_URL/api/health") || { echo "bipolar-code unreachable at $BIPOLAR_URL: backend off, wrong URL or off-LAN"; exit 82; }
+printf '%s\n' "$HEALTH"
+# /api/health is public: only an authenticated /api route proves the key
+KEY_CODE=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/delegate/jobs?limit=1")
+case "$KEY_CODE" in
+  200) ;;
+  401) echo "bipolar-code rejected the API key on /api (HTTP 401): run /bipolar:setup with the full API key"; exit 81 ;;
+  *) echo "key check failed: GET /api/delegate/jobs answered HTTP $KEY_CODE"; exit 84 ;;
+esac
 ```
 
 - Exit 77 → recursion guard: this session is itself a delegate. Report the message verbatim and stop; never work around it (unsetting the variable, sending depth 0, calling the API another way).
+- Exit 81 → the key is wrong for `/api/*`, which only accepts the full API key (a legacy proxy key still works on `/v1`, so rescue may have worked with it): tell the user to run `/bipolar:setup` with the key from bipolar-code → Settings → "Copiar API Key completa" and stop.
+- Exit 82 → bipolar-code is off, the URL is wrong or this PC is off the LAN; report it and stop. Do not retry in a loop.
+- Exit 84 → the key check got another answer: 404 means a server without the broker (older than 2.13; tell the user to update bipolar-code), 503 means authentication is not configured on the server. Report it and stop.
 - Health must report `"version":"2.13` or newer and `"delegation_enabled":true`. Older server → tell the user to update bipolar-code. `delegation_enabled:false` → tell the user to enable it in bipolar-code → Agentes (switch "Delegación a agentes CLI" + workspaces permitidos) and stop.
 
 Step 2 — Submit. Copy this block exactly and fill in only the task (verbatim, inside the heredoc — the closing `EOF_TASK` must stay alone at column 0) and the option variables. Never type the JSON yourself: the task is written to a temporary file through a single-quoted heredoc, serialized by `node` (or Python's `json` when node is missing) and posted with `--data-binary @file`, so apostrophes, quotes, backticks, `$VAR`, `$(...)` and newlines reach the broker intact. Keep the `X-Bipolar-Depth` header exactly as written: it forwards the inherited depth so the broker's own guard refuses nested jobs.
@@ -73,8 +84,9 @@ curl -s -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/j
 
 Interpret the response:
 
-- 200 with `dry_run` → report the chosen `agent_id`, `model`, `tier` and `skipped` list; stop.
-- 202 → note the `id` and continue.
+- 200 when `--dry-run` was given → report the chosen `agent_id`, `model`, `tier` and `skipped` list; stop.
+- 200 otherwise → the job, with `status: queued`: note its `id` and continue.
+- 401 → the key was rejected (changed on the server since step 1): tell the user to run `/bipolar:setup` with the full API key and stop.
 - 400 `workspace_allowlist_empty` → bipolar-code has no allowed workspaces yet; tell the user to add the project's path in Agentes → Workspaces permitidos. Stop.
 - 400 `workspace_not_allowed` → the workspace is not inside any allowed workspace; tell the user to add the path (or a parent) in Agentes → Workspaces permitidos. Stop.
 - 400 `workspace_required` → the body went out without a workspace: the block was not copied as written (the default line was dropped). Restore it and submit again.

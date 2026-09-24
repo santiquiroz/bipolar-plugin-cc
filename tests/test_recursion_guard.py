@@ -22,7 +22,7 @@ class DelegateRecursionGuardTest(unittest.TestCase):
         completed, calls = run_block(bash_blocks(DELEGATE)[0])
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(len(curl_calls(calls)), 1)
+        self.assertEqual(len(curl_calls(calls)), 2)
 
     def test_submit_forwards_the_inherited_depth(self):
         _, calls = run_block(block_containing(DELEGATE, "-X POST"), depth="1")

@@ -38,6 +38,18 @@
   `workspace_not_absolute`, `workspace_missing`, `workspace_not_dir`,
   `workspace_forbidden`) with its action, and the docs say that `--mode task`
   needs the path to exist on the server host (from another PC: `--mode text`).
+- Health checks that check something: `bipolar-rescue` no longer proceeds on a
+  200 from `/v1/models` (a static list served even with llama-server stopped);
+  it requires `running` and `healthy` from `/api/llamacpp/status`, with its own
+  exit code for a rejected key (81), an unreachable server (82), llama-server
+  stopped or loading (83) and any other answer (84). `/bipolar:delegate`
+  validates the key in step 1 on `GET /api/delegate/jobs?limit=1` (`/api/health`
+  is public), expects the 200 the broker really returns for a new job (not
+  202) and handles a 401. `/bipolar:setup` checks the key on `/api` (`/v1` also
+  accepts the legacy proxy key), reports `version`, `delegation_enabled` and the
+  llama-server status, prints the smoke's `X-Bipolar-Route` header and warns
+  when a provider other than `llamacpp` answered; its closing reminder mentions
+  `/bipolar:delegate`.
 
 ## 0.2.0 — 2026-09-10
 

@@ -13,6 +13,7 @@ FAKES = r"""
 curl() {
   printf 'curl %s\n' "$*" >> "$FAKE_LOG"
   for arg in "$@"; do case "$arg" in @*) cat "${arg#@}" > "$FAKE_CURL_BODY";; esac; done
+  case "$*" in *'%{http_code}'*) printf '200'; return;; esac
   printf '{"status":"ok"}'
 }
 """

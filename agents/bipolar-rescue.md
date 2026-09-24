@@ -40,15 +40,21 @@ Forwarding rules:
 [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
 BIPOLAR_DELEGATION_DEPTH=1 ANTHROPIC_BASE_URL="$BIPOLAR_URL" ANTHROPIC_API_KEY="$BIPOLAR_API_KEY" \
 GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" \
-claude -p \
+timeout 570 claude -p \
   --model claude-sonnet-4-6 \
   --permission-mode acceptEdits \
-  --disallowedTools "Task,Agent,WebSearch,WebFetch" \
+  --settings '{"disableAllHooks":true}' \
+  --strict-mcp-config \
+  --max-turns 50 \
+  --disallowedTools "Task,Agent,Skill,WebSearch,WebFetch" \
   --output-format text <<'EOF_TASK'
 <task text, verbatim and self-contained>
 
 Trabaja solo con las instrucciones dadas. No delegues. No hagas commits.
 EOF_TASK
+rc=$?
+[ "$rc" = 124 ] && echo "bipolar-rescue: the child hit the 570 s cap and was stopped; its edits are partial (check git status / git diff)"
+exit "$rc"
 ```
 
 - Never inline the task in double quotes (`claude -p "..."`): Git Bash would run backticked commands and `$(...)` from the task itself and mangle `$`, `${...}` and quotes — exactly the pasted code this agent is meant to carry.
@@ -57,10 +63,13 @@ EOF_TASK
 - `GIT_TERMINAL_PROMPT=0` and `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` make any git command in the child that would wait for credentials, an SSH passphrase or a host-key confirmation fail immediately instead of hanging the headless run.
 
 - `--model claude-sonnet-4-6` is an alias: bipolar-code maps every alias to whatever local model is active. Do not "fix" it to a real model name.
-- `--disallowedTools "Task,Agent,..."` is MANDATORY — the child claude reads the machine's global CLAUDE.md, which contains delegation rules; without this it may try to delegate to Codex/Copilot/Ollama recursively. The child must do the work itself with the local model.
+- `--disallowedTools "Task,Agent,Skill,..."` is MANDATORY — the child claude reads the machine's global CLAUDE.md, which contains delegation rules; without this it may try to delegate to Codex/Copilot/Ollama recursively (a skill such as `codex:rescue` is just another route to that). The child must do the work itself with the local model.
+- `--settings '{"disableAllHooks":true}'` and `--strict-mcp-config` are MANDATORY — otherwise the child inherits the machine's hooks and MCP servers. A Stop hook there may run `codex review` over every repo with uncommitted changes (which the child always leaves), spending paid quota from the free lane; prompt hooks inject delegation nudges, and every MCP tool definition inflates the local model's context. Without `--mcp-config`, `--strict-mcp-config` loads no MCP server at all.
+- `--max-turns 50` matches the broker's own cap for claude jobs: a model stuck in a loop ends with `Error: Reached max turns (50)` instead of running until the time cap.
+- `timeout 570` stops the child before the Bash tool's 600 s ceiling, so the block always gets to report. Exit 124 means the child was stopped mid-task: report it as a PARTIAL result (the echoed message plus whatever output came back) and tell the caller to inspect `git status` / `git diff` before deciding to keep, finish or revert the edits. Never relaunch it yourself. Any other non-zero exit is the child's own error; return it verbatim.
 - `BIPOLAR_DELEGATION_DEPTH=1` is MANDATORY — it marks the child as a delegate: its own `/bipolar:delegate` and `bipolar-rescue` refuse to run, and bipolar-code's broker rejects any job it submits (`recursion_guard`).
 - Keep the closing line "Trabaja solo con las instrucciones dadas. No delegues. No hagas commits." after the task inside the heredoc. The orchestrator (caller) reviews and commits.
-- Set the Bash timeout to at least 600000ms (10 minutes). Local generation on consumer GPUs is slower than API models; a mid-generation kill is a false negative, not a hang. NEVER use `run_in_background: true` — the call must complete within this agent's lifetime.
+- Set the Bash timeout to 600000ms (10 minutes, the tool's maximum). Local generation on consumer GPUs is slower than API models; the inner `timeout 570` must fire first so a slow run ends as a reported partial result, not a silent kill. NEVER use `run_in_background: true` — the call must complete within this agent's lifetime.
 - Run from the repository directory the caller is working in (the Bash tool already starts there). The child claude gets real filesystem access to that repo — that is the point.
 - Preserve the caller's task text; make it self-contained (paste in any signatures, file paths, or contracts the caller provided — the local model must not need codebase knowledge it wasn't given).
 

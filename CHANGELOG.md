@@ -25,6 +25,12 @@
   lost to a server restart. New `--timeout <s>` flag (`timeout_s`, 60-3600),
   a documented cancel (`DELETE /api/delegate/jobs/<id>`), and the report shows
   the job's `error` when `output_tail` is empty.
+- `bipolar-rescue` isolates its child `claude -p` from the machine's setup:
+  `--settings '{"disableAllHooks":true}'` (a global Stop hook no longer runs
+  `codex review` on the child's uncommitted edits), `--strict-mcp-config` (no
+  MCP servers), `--max-turns 50` (the broker's cap) and `Skill` added to
+  `--disallowedTools`. The child runs under `timeout 570`, below the Bash
+  tool's 600 s ceiling, and exit 124 is reported as a partial result.
 
 ## 0.2.0 — 2026-09-10
 

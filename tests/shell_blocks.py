@@ -15,13 +15,16 @@ curl() {
   for arg in "$@"; do case "$arg" in @*) cat "${arg#@}" > "$FAKE_CURL_BODY";; esac; done
   printf '{"status":"ok"}'
 }
-claude() {
-  printf 'claude depth=%s\n' "${BIPOLAR_DELEGATION_DEPTH-unset}" >> "$FAKE_LOG"
-  printf 'claude GIT_TERMINAL_PROMPT=%s\n' "${GIT_TERMINAL_PROMPT-unset}" >> "$FAKE_LOG"
-  printf 'claude GIT_SSH_COMMAND=%s\n' "${GIT_SSH_COMMAND-unset}" >> "$FAKE_LOG"
-  printf '%s\0' "$@" > "$FAKE_CLAUDE_ARGS"
-  cat > "$FAKE_CLAUDE_STDIN"
-}
+"""
+# An executable on PATH, not a function: a wrapper such as `timeout` must reach the fake too
+FAKE_CLAUDE = r"""#!/usr/bin/env bash
+printf 'claude depth=%s\n' "${BIPOLAR_DELEGATION_DEPTH-unset}" >> "$FAKE_LOG"
+printf 'claude GIT_TERMINAL_PROMPT=%s\n' "${GIT_TERMINAL_PROMPT-unset}" >> "$FAKE_LOG"
+printf 'claude GIT_SSH_COMMAND=%s\n' "${GIT_SSH_COMMAND-unset}" >> "$FAKE_LOG"
+printf '%s\0' "$@" > "$FAKE_CLAUDE_ARGS"
+cat > "$FAKE_CLAUDE_STDIN"
+[ -n "${FAKE_CLAUDE_SLEEP-}" ] && exec sleep "$FAKE_CLAUDE_SLEEP"
+exit "${FAKE_CLAUDE_EXIT:-0}"
 """
 FakeRun = namedtuple("FakeRun", "completed calls claude_args claude_stdin curl_body")
 PROXY_VARIABLES = ("http_proxy", "https_proxy", "all_proxy", "no_proxy")
@@ -79,9 +82,10 @@ def run_block(block, depth=None):
     return run.completed, run.calls
 
 
-def run_with_fakes(block, depth=None):
+def run_with_fakes(block, depth=None, **overrides):
     with tempfile.TemporaryDirectory() as home:
-        env = isolated_env(home, depth)
+        env = {**isolated_env(home, depth), **overrides}
+        env["PATH"] = _install_fake_claude(home) + os.pathsep + env.get("PATH", "")
         for name in ("FAKE_LOG", "FAKE_CLAUDE_ARGS", "FAKE_CLAUDE_STDIN", "FAKE_CURL_BODY"):
             Path(env[name]).touch()
         completed = run_bash(FAKES + block, env)
@@ -92,6 +96,15 @@ def run_with_fakes(block, depth=None):
             claude_stdin=_read_text(env["FAKE_CLAUDE_STDIN"]),
             curl_body=_read_text(env["FAKE_CURL_BODY"]),
         )
+
+
+def _install_fake_claude(home):
+    fake_bin = Path(home) / "fake-bin"
+    fake_bin.mkdir()
+    script = fake_bin / "claude"
+    script.write_text(FAKE_CLAUDE, encoding="utf-8", newline="\n")
+    script.chmod(0o755)
+    return str(fake_bin)
 
 
 def run_with_real_curl(block, **overrides):

@@ -14,18 +14,21 @@ Parse the flags out of the request; everything else is the task text. Defaults: 
 Step 1 — Config and health (one Bash call):
 
 ```bash
+# A CLI launched by the broker (or by bipolar-rescue) inherits BIPOLAR_DELEGATION_DEPTH=1
+[ "${BIPOLAR_DELEGATION_DEPTH:-0}" = 0 ] || { echo "bipolar recursion guard: this session already runs inside a delegated job (BIPOLAR_DELEGATION_DEPTH=$BIPOLAR_DELEGATION_DEPTH); not delegating again"; exit 77; }
 # Environment variables win; the file written by /bipolar:setup is the fallback
 [ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
 [ -n "$BIPOLAR_URL" ] && [ -n "$BIPOLAR_API_KEY" ] || { echo "bipolar-cc not configured: run /bipolar:setup"; exit 78; }
 curl -s -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/health"
 ```
 
+- Exit 77 → recursion guard: this session is itself a delegate. Report the message verbatim and stop; never work around it (unsetting the variable, sending depth 0, calling the API another way).
 - Health must report `"version":"2.13` or newer and `"delegation_enabled":true`. Older server → tell the user to update bipolar-code. `delegation_enabled:false` → tell the user to enable it in bipolar-code → Agentes (switch "Delegación a agentes CLI" + workspaces permitidos) and stop.
 
-Step 2 — Submit. Build the JSON body yourself (escape quotes, backslashes and newlines in the task; forward slashes in the workspace path work on Windows) and post it:
+Step 2 — Submit. Build the JSON body yourself (escape quotes, backslashes and newlines in the task; forward slashes in the workspace path work on Windows) and post it. Keep the `X-Bipolar-Depth` header exactly as written: it forwards the inherited depth so the broker's own guard refuses nested jobs.
 
 ```bash
-curl -s -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" -H "X-Bipolar-Depth: 0" \
+curl -s -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" -H "X-Bipolar-Depth: ${BIPOLAR_DELEGATION_DEPTH:-0}" \
   -d '{"task":"<task text>","workspace":"<abs path>","mode":"task"}' \
   "$BIPOLAR_URL/api/delegate/jobs"
 ```

@@ -21,10 +21,13 @@ If neither exists, do not guess: return an error telling the caller to run `/bip
 Health check first (cheap, mandatory):
 
 ```bash
+# A CLI launched by bipolar-code's broker (or by this agent) inherits BIPOLAR_DELEGATION_DEPTH=1
+[ "${BIPOLAR_DELEGATION_DEPTH:-0}" = 0 ] || { echo "bipolar recursion guard: this session already runs inside a delegated job (BIPOLAR_DELEGATION_DEPTH=$BIPOLAR_DELEGATION_DEPTH); not delegating again"; exit 77; }
 [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
 curl -s -o /dev/null -w "%{http_code}" -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/v1/models"
 ```
 
+- Exit 77 → recursion guard: you are running inside a delegated session. Return the message verbatim and stop; never work around it (unsetting the variable, calling `claude -p` another way).
 - `200` → proceed.
 - `401` → wrong key; point the caller at `/bipolar:setup`.
 - `000`/connection refused → server down or wrong URL; tell the caller (bipolar-code backend may be off, or you're off-LAN). Do NOT retry in a loop.
@@ -35,7 +38,7 @@ Forwarding rules:
 
 ```bash
 [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
-ANTHROPIC_BASE_URL="$BIPOLAR_URL" ANTHROPIC_API_KEY="$BIPOLAR_API_KEY" \
+BIPOLAR_DELEGATION_DEPTH=1 ANTHROPIC_BASE_URL="$BIPOLAR_URL" ANTHROPIC_API_KEY="$BIPOLAR_API_KEY" \
 claude -p "<task text, self-contained>" \
   --model claude-sonnet-4-6 \
   --permission-mode acceptEdits \
@@ -45,6 +48,7 @@ claude -p "<task text, self-contained>" \
 
 - `--model claude-sonnet-4-6` is an alias: bipolar-code maps every alias to whatever local model is active. Do not "fix" it to a real model name.
 - `--disallowedTools "Task,Agent,..."` is MANDATORY — the child claude reads the machine's global CLAUDE.md, which contains delegation rules; without this it may try to delegate to Codex/Copilot/Ollama recursively. The child must do the work itself with the local model.
+- `BIPOLAR_DELEGATION_DEPTH=1` is MANDATORY — it marks the child as a delegate: its own `/bipolar:delegate` and `bipolar-rescue` refuse to run, and bipolar-code's broker rejects any job it submits (`recursion_guard`).
 - Add to the task text: "Trabaja solo con las instrucciones dadas. No delegues. No hagas commits." The orchestrator (caller) reviews and commits.
 - Set the Bash timeout to at least 600000ms (10 minutes). Local generation on consumer GPUs is slower than API models; a mid-generation kill is a false negative, not a hang. NEVER use `run_in_background: true` — the call must complete within this agent's lifetime.
 - Run from the repository directory the caller is working in (the Bash tool already starts there). The child claude gets real filesystem access to that repo — that is the point.

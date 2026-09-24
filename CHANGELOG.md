@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Recursion guard: `/bipolar:delegate` forwards `BIPOLAR_DELEGATION_DEPTH` as
+  `X-Bipolar-Depth` (it was hardcoded to 0) and, like `bipolar-rescue`, refuses
+  to run inside a delegated session. `bipolar-rescue` marks its child with
+  `BIPOLAR_DELEGATION_DEPTH=1`. Hermetic tests for these shell blocks in `tests/`.
+
 ## 0.2.0 — 2026-09-10
 
 - New `/bipolar:delegate` command: sends the task to bipolar-code's delegation

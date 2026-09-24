@@ -53,8 +53,13 @@ What `/bipolar:delegate` reports: job status (`succeeded`, `failed`, `timeout`, 
 ## Notes
 
 - `bipolar-rescue` runs the child Claude Code with `--permission-mode acceptEdits` and `--disallowedTools Task,Agent` (no recursive delegation). The broker applies each CLI's own safety flags server-side (claude `acceptEdits` without `Task/Agent`, codex `workspace-write`, copilot deny list, agy only with its global deny list) and refuses workspaces outside its allow-list. Review `git diff` before committing — the caller owns the commit.
+- Recursion guard: bipolar-code's broker launches every CLI with `BIPOLAR_DELEGATION_DEPTH=1`, and `bipolar-rescue` sets the same variable on its child. Inside such a session `/bipolar:delegate` and `bipolar-rescue` refuse to run (exit 77), and `/bipolar:delegate` forwards the value as `X-Bipolar-Depth` so the broker rejects nested jobs with `recursion_guard` even if the local check is skipped.
 - Local models follow precise instructions well and improvise badly: paste signatures, paths, and contracts into the task text.
 - The job log lives under bipolar-code's config dir: keep secrets out of task text.
+
+## Tests
+
+The shell blocks the command and the agent tell Claude to run are tested with fakes for `curl` and `claude` (no server, no real CLI): `python -m unittest discover -s tests -v`. Needs `bash` (Git Bash on Windows).
 
 ## License
 

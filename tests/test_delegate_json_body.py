@@ -10,7 +10,7 @@ JOBS_PATH = "/api/delegate/jobs"
 WORKSPACE = "C:/personal/some repo"
 TRICKY_TASK = "\n".join([
     "don't touch `x` $(id) \"q\" and ${HOME}",
-    "it's JS: const s = 'a' + `${b}`; path C:\tmp\$USER \n stays",
+    "it's JS: const s = 'a' + `${b}`; path C:\\tmp\\$USER \\n stays",
     "line3 ünïcode",
 ])
 QUEUED = (200, compact_json({"id": "job-1", "status": "queued"}))

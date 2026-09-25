@@ -29,6 +29,8 @@ echo "llama.cpp: $(curl -s --max-time 10 -H "x-api-key: $BIPOLAR_API_KEY" "$BIPO
 curl -s -D - -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" \
   "$BIPOLAR_URL/v1/messages" \
   -d '{"model":"claude-sonnet-4-6","max_tokens":32,"messages":[{"role":"user","content":"Say OK"}]}'
+# e) the claude CLI bipolar-rescue launches, resolved the same way it does
+echo "claude CLI: $(command -v claude || command -v claude.exe || { [ -x "$HOME/.local/bin/claude.exe" ] && echo "$HOME/.local/bin/claude.exe"; } || echo 'NOT FOUND')"
 ```
 
 4. Interpret:
@@ -36,4 +38,5 @@ curl -s -D - -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json
    - (b) `200` → the key is valid on `/api`. `401` → wrong key (a key that only works on `/v1` is the legacy proxy key: copy the full one from Settings → "Copiar API Key completa"). `404` → server older than 2.13 (no broker; `bipolar-rescue` can still work).
    - (c) `"running":true` and `"healthy":true` → llama-server is ready. `"running":false` → bipolar-code is up but llama-server is not: open bipolar-code → Providers → llama.cpp → Iniciar (and make sure a GGUF model is configured and `llamacpp` is the active provider). `"healthy":false` while running → it is still loading the model; check again in a minute.
    - (d) an error mentioning the local server not responding → llama-server is down (see c). Otherwise report the `X-Bipolar-Route` header: `target=provider:llamacpp` means the local model answered. Any other target means smart routing sent the request to another provider (possibly a paid one): warn the user that `bipolar-rescue` is then neither local nor free, and that the routing is set in bipolar-code (smart routing mode and the `llamacpp` provider).
+   - (e) a path → `bipolar-rescue` will run that `claude`. `NOT FOUND` → `bipolar-rescue` stops with exit 79: install Claude Code, or add the folder holding `claude.exe` to `PATH` in a form this shell resolves (Git Bash may list `/Users/<you>/.local/bin` without the `/c`). `/bipolar:delegate` does not need it (the broker runs its CLIs on the server).
    - All OK → confirm setup complete and remind: delegate with `/bipolar:rescue <task>` (or let the `bipolar-rescue` subagent fire proactively) for the local model, or `/bipolar:delegate <task>` to let bipolar-code's broker pick the CLI agent by tier and quota.

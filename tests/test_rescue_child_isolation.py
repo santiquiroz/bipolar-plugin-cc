@@ -6,7 +6,7 @@ from shell_blocks import block_containing, run_with_fakes
 
 RESCUE = "agents/bipolar-rescue.md"
 BASH_TOOL_CEILING_S = 600
-TIME_CAP = re.compile(r"\btimeout (\d+) claude\b")
+TIME_CAP = re.compile(r'\btimeout (\d+) "\$CLAUDE_BIN"')
 
 
 def forwarding_block():
@@ -22,7 +22,7 @@ def flag_value(args, flag):
 
 
 def with_time_cap(block, seconds):
-    return TIME_CAP.sub(f"timeout {seconds} claude", block, count=1)
+    return TIME_CAP.sub(f'timeout {seconds} "$CLAUDE_BIN"', block, count=1)
 
 
 class RescueChildIsolationTest(unittest.TestCase):

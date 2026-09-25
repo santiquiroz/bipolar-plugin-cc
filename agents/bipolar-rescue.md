@@ -55,9 +55,11 @@ Forwarding rules:
 
 ```bash
 [ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
+CLAUDE_BIN=$(command -v claude || command -v claude.exe || { [ -x "$HOME/.local/bin/claude.exe" ] && echo "$HOME/.local/bin/claude.exe"; }) \
+  || { echo "claude CLI not found on PATH nor at $HOME/.local/bin/claude.exe: install Claude Code or add its folder to PATH"; exit 79; }
 BIPOLAR_DELEGATION_DEPTH=1 ANTHROPIC_BASE_URL="$BIPOLAR_URL" ANTHROPIC_API_KEY="$BIPOLAR_API_KEY" \
 GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" \
-timeout 570 claude -p \
+timeout 570 "$CLAUDE_BIN" -p \
   --model claude-sonnet-4-6 \
   --permission-mode acceptEdits \
   --settings '{"disableAllHooks":true}' \
@@ -83,6 +85,7 @@ exit "$rc"
 - `--disallowedTools "Task,Agent,Skill,..."` is MANDATORY — the child claude reads the machine's global CLAUDE.md, which contains delegation rules; without this it may try to delegate to Codex/Copilot/Ollama recursively (a skill such as `codex:rescue` is just another route to that). The child must do the work itself with the local model.
 - `--settings '{"disableAllHooks":true}'` and `--strict-mcp-config` are MANDATORY — otherwise the child inherits the machine's hooks and MCP servers. A Stop hook there may run `codex review` over every repo with uncommitted changes (which the child always leaves), spending paid quota from the free lane; prompt hooks inject delegation nudges, and every MCP tool definition inflates the local model's context. Without `--mcp-config`, `--strict-mcp-config` loads no MCP server at all.
 - `--max-turns 50` matches the broker's own cap for claude jobs: a model stuck in a loop ends with `Error: Reached max turns (50)` instead of running until the time cap.
+- `CLAUDE_BIN` is the `claude` (or `claude.exe`) on `PATH`, else the native installer's `$HOME/.local/bin/claude.exe`: Git Bash's `PATH` can list that folder in a form that does not resolve (`/Users/<you>/.local/bin` without the `/c`). Exit 79 → neither exists; return the message and point the caller at `/bipolar:setup`, which reports what it resolves. Do not search the disk for another binary.
 - `timeout 570` stops the child before the Bash tool's 600 s ceiling, so the block always gets to report. Exit 124 means the child was stopped mid-task: report it as a PARTIAL result (the echoed message plus whatever output came back) and tell the caller to inspect `git status` / `git diff` before deciding to keep, finish or revert the edits. Never relaunch it yourself. Any other non-zero exit is the child's own error; return it verbatim.
 - `BIPOLAR_DELEGATION_DEPTH=1` is MANDATORY — it marks the child as a delegate: its own `/bipolar:delegate` and `bipolar-rescue` refuse to run, and bipolar-code's broker rejects any job it submits (`recursion_guard`).
 - Keep the closing line "Trabaja solo con las instrucciones dadas. No delegues. No hagas commits." after the task inside the heredoc. The orchestrator (caller) reviews and commits.

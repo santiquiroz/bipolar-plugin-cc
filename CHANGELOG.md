@@ -50,6 +50,15 @@
   llama-server status, prints the smoke's `X-Bipolar-Route` header and warns
   when a provider other than `llamacpp` answered; its closing reminder mentions
   `/bipolar:delegate`.
+- Config and `claude` resolution: `bipolar-rescue` reads
+  `~/.config/bipolar-cc/env` only when `BIPOLAR_URL` is not already set (the
+  environment wins, as documented) and exits 78 ("run /bipolar:setup") with no
+  config instead of reporting an unreachable server; `/bipolar:delegate`'s
+  submit block reloads that file too. The child runs the `claude` (or
+  `claude.exe`) on `PATH`, else `$HOME/.local/bin/claude.exe`, and exits 79 with
+  a clear message when neither exists (Git Bash can list that folder as
+  `/Users/<you>/.local/bin`, which does not resolve). `/bipolar:setup` reports
+  which `claude` it resolves.
 
 ## 0.2.0 — 2026-09-10
 

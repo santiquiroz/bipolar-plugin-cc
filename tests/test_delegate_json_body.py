@@ -14,6 +14,16 @@ TRICKY_TASK = "\n".join([
     "line3 ünïcode",
 ])
 QUEUED = (200, compact_json({"id": "job-1", "status": "queued"}))
+BROKER_REFUSALS = [
+    (400, compact_json({"detail": "workspace_not_allowed"})),
+    (400, compact_json({"detail": {
+        "detail": "no_agent_available",
+        "reasons": ["codex: exhausted:quota_exhausted"],
+        "skipped": {"codex": "exhausted:quota_exhausted", "agy": "busy"},
+    }})),
+    (409, compact_json({"detail": "recursion_guard"})),
+    (429, compact_json({"detail": "too_many_jobs"})),
+]
 BODY_ARGUMENT = re.compile(r"--data-binary @(\S+)")
 NODE_MISSING = "node() { return 127; }\nexport -f node\n"
 
@@ -98,6 +108,14 @@ class DelegateSubmitReplyTest(unittest.TestCase):
         result, _ = submit(reply=(401, compact_json({"detail": "API key inválida o faltante"})))
 
         self.assertEqual(result.completed.stdout.splitlines()[-1], "HTTP 401")
+
+    def test_passes_the_brokers_refusals_through_intact(self):
+        for code, payload in BROKER_REFUSALS:
+            with self.subTest(code=code, payload=payload):
+                result, _ = submit(reply=(code, payload))
+
+                self.assertEqual(result.completed.returncode, 0, output(result.completed))
+                self.assertEqual(result.completed.stdout.splitlines()[-2:], [payload, f"HTTP {code}"])
 
     def test_reports_an_unreachable_server(self):
         result, _ = submit(BIPOLAR_URL=UNREACHABLE_URL)

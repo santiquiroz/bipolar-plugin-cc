@@ -39,6 +39,8 @@ esac
 Step 2 — Submit. Copy this block exactly and fill in only the task (verbatim, inside the heredoc — the closing `EOF_TASK` must stay alone at column 0) and the option variables. Never type the JSON yourself: the task is written to a temporary file through a single-quoted heredoc, serialized by `node` (or Python's `json` when node is missing) and posted with `--data-binary @file`, so apostrophes, quotes, backticks, `$VAR`, `$(...)` and newlines reach the broker intact. Keep the `X-Bipolar-Depth` header exactly as written: it forwards the inherited depth so the broker's own guard refuses nested jobs.
 
 ```bash
+[ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
+[ -n "$BIPOLAR_URL" ] && [ -n "$BIPOLAR_API_KEY" ] || { echo "bipolar-cc not configured: run /bipolar:setup"; exit 78; }
 BODY_DIR=$(mktemp -d) || exit 1
 trap 'rm -rf "$BODY_DIR"' EXIT
 # Native node/python/curl on Windows cannot open Git Bash's /tmp paths
@@ -80,6 +82,7 @@ curl -s -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/j
 - Set `WORKSPACE='<abs path>'`, `MODE=text`, `AGENT=<id>`, `TIER=<tier>`, `TIMEOUT_S=<s>` or `DRY_RUN=1` only when the matching flag was given; empty values stay out of the body, and an empty `WORKSPACE` becomes the current directory. A `--workspace` path goes in the server's native form: `C:/...` on Windows (forward slashes work), not `/c/...`; if the path contains an apostrophe, write it as `'\''`.
 - The broker resolves the workspace on the machine that runs bipolar-code, not on this one. `--mode task` from another PC of the LAN only works when the same path exists on the server host; otherwise use `--mode text` (the agent runs in a scratch directory on the server and answers in text) or `bipolar-rescue`.
 - The heredoc delimiter must not occur anywhere in the task text. Use `EOF_TASK` unless the task contains that string; then pick another (e.g. `EOF_TASK_7f3a`) for both the opening `<<'...'` and the closing line.
+- Exit 78 → no config in the environment nor in the file written by `/bipolar:setup`; tell the user to run `/bipolar:setup` and stop.
 - Exit 79 → neither node nor python could run; report it and stop. The temporary directory is removed when the call ends.
 
 Interpret the response:

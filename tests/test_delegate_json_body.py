@@ -3,7 +3,7 @@ import os
 import re
 import unittest
 
-from harness import StubServer, closed_port_url, command, compact_json, curl_calls, output, run
+from harness import StubServer, UNREACHABLE_URL, command, compact_json, curl_calls, output, run
 
 SUBMIT = "bipolar-delegate-submit"
 JOBS_PATH = "/api/delegate/jobs"
@@ -100,7 +100,7 @@ class DelegateSubmitReplyTest(unittest.TestCase):
         self.assertEqual(result.completed.stdout.splitlines()[-1], "HTTP 401")
 
     def test_reports_an_unreachable_server(self):
-        result, _ = submit(BIPOLAR_URL=closed_port_url())
+        result, _ = submit(BIPOLAR_URL=UNREACHABLE_URL)
 
         self.assertEqual(result.completed.returncode, 82, output(result.completed))
         self.assertIn("unreachable", result.completed.stdout)

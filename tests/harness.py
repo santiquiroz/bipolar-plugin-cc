@@ -4,7 +4,6 @@ import re
 import shlex
 import shutil
 import signal
-import socket
 import subprocess
 import tempfile
 import threading
@@ -279,9 +278,3 @@ class StubServer:
     def __exit__(self, *exc):
         self.httpd.shutdown()
         self.httpd.server_close()
-
-
-def closed_port_url():
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return f"http://127.0.0.1:{probe.getsockname()[1]}"

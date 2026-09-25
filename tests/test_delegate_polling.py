@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from harness import BIN, StubServer, closed_port_url, command, compact_json, output, patched_plugin_bin, run, script_assignment
+from harness import BIN, StubServer, UNREACHABLE_URL, command, compact_json, output, patched_plugin_bin, run, script_assignment
 
 WAIT = "bipolar-delegate-wait"
 JOB_ID = "job-7f3a"
@@ -57,7 +57,7 @@ class DelegatePollingTest(unittest.TestCase):
         self.assertIn("502", completed.stdout)
 
     def test_gives_up_when_the_server_is_unreachable(self):
-        completed = wait_for_job(closed_port_url())
+        completed = wait_for_job(UNREACHABLE_URL)
 
         self.assertEqual(completed.returncode, 74, output(completed))
 

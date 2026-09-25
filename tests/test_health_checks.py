@@ -1,6 +1,6 @@
 import unittest
 
-from harness import BIN, REPO, StubServer, closed_port_url, command, compact_json, output, run
+from harness import BIN, REPO, StubServer, UNREACHABLE_URL, command, compact_json, output, run
 
 DELEGATE = "commands/delegate.md"
 SETUP = "commands/setup.md"
@@ -40,7 +40,7 @@ def run_against(script_name, routes, headers=None, prelude=""):
 
 
 def run_unreachable(script_name):
-    return run(command(script_name), BIPOLAR_URL=closed_port_url()).completed
+    return run(command(script_name), BIPOLAR_URL=UNREACHABLE_URL).completed
 
 
 class RescueHealthCheckTest(unittest.TestCase):
@@ -169,7 +169,7 @@ class SetupVerificationTest(unittest.TestCase):
     def test_verifies_the_file_it_just_wrote_not_the_environment(self):
         with StubServer(setup_routes()) as server:
             prelude = write_config(url=server.url)
-            completed = run(command("bipolar-setup-verify"), prelude=prelude, BIPOLAR_URL=closed_port_url()).completed
+            completed = run(command("bipolar-setup-verify"), prelude=prelude, BIPOLAR_URL=UNREACHABLE_URL).completed
 
         self.assertEqual(len(server.requests), 4, output(completed))
 

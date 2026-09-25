@@ -23,7 +23,8 @@ Health check first (cheap, mandatory):
 ```bash
 # A CLI launched by bipolar-code's broker (or by this agent) inherits BIPOLAR_DELEGATION_DEPTH=1
 [ "${BIPOLAR_DELEGATION_DEPTH:-0}" = 0 ] || { echo "bipolar recursion guard: this session already runs inside a delegated job (BIPOLAR_DELEGATION_DEPTH=$BIPOLAR_DELEGATION_DEPTH); not delegating again"; exit 77; }
-[ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
+[ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
+[ -n "$BIPOLAR_URL" ] && [ -n "$BIPOLAR_API_KEY" ] || { echo "bipolar-cc not configured: run /bipolar:setup"; exit 78; }
 R=$(curl -s --max-time 10 -w '\n%{http_code}' -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/llamacpp/status")
 CODE=${R##*$'\n'} R=${R%$'\n'*}
 RUNNING_RE='"running" *: *true' HEALTHY_RE='"healthy" *: *true'
@@ -42,6 +43,7 @@ echo "llama-server ready: $R"
 
 - Exit 77 → recursion guard: you are running inside a delegated session. Return the message verbatim and stop; never work around it (unsetting the variable, calling `claude -p` another way).
 - Exit 0 (`llama-server ready`) → proceed.
+- Exit 78 → no config in the environment nor in `$HOME/.config/bipolar-cc/env`; point the caller at `/bipolar:setup`. Do not guess a URL or key.
 - Exit 81 → wrong key; point the caller at `/bipolar:setup`.
 - Exit 82 → server down or wrong URL; tell the caller (bipolar-code backend may be off, or you're off-LAN). Do NOT retry in a loop.
 - Exit 83 → bipolar-code is up but its llama-server is stopped or still loading: return the message; the caller starts it (bipolar-code → Providers → llama.cpp → Iniciar, with a GGUF model configured) or picks another lane. Do not start it yourself.
@@ -52,7 +54,7 @@ Forwarding rules:
 - Exactly one foreground `Bash` call running headless Claude Code against the bipolar endpoint. The task goes to `claude -p` on stdin through a single-quoted heredoc, so quotes, backticks, `$VAR` and `$(...)` survive intact (copy the block exactly — the closing `EOF_TASK` must stay alone at column 0):
 
 ```bash
-[ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
+[ -z "$BIPOLAR_URL" ] && [ -f "$HOME/.config/bipolar-cc/env" ] && . "$HOME/.config/bipolar-cc/env"
 BIPOLAR_DELEGATION_DEPTH=1 ANTHROPIC_BASE_URL="$BIPOLAR_URL" ANTHROPIC_API_KEY="$BIPOLAR_API_KEY" \
 GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" \
 timeout 570 claude -p \

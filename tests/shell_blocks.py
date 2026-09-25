@@ -22,6 +22,8 @@ FAKE_CLAUDE = r"""#!/usr/bin/env bash
 printf 'claude depth=%s\n' "${BIPOLAR_DELEGATION_DEPTH-unset}" >> "$FAKE_LOG"
 printf 'claude GIT_TERMINAL_PROMPT=%s\n' "${GIT_TERMINAL_PROMPT-unset}" >> "$FAKE_LOG"
 printf 'claude GIT_SSH_COMMAND=%s\n' "${GIT_SSH_COMMAND-unset}" >> "$FAKE_LOG"
+printf 'claude ANTHROPIC_BASE_URL=%s\n' "${ANTHROPIC_BASE_URL-unset}" >> "$FAKE_LOG"
+printf 'claude ANTHROPIC_API_KEY=%s\n' "${ANTHROPIC_API_KEY-unset}" >> "$FAKE_LOG"
 printf '%s\0' "$@" > "$FAKE_CLAUDE_ARGS"
 cat > "$FAKE_CLAUDE_STDIN"
 [ -n "${FAKE_CLAUDE_SLEEP-}" ] && exec sleep "$FAKE_CLAUDE_SLEEP"

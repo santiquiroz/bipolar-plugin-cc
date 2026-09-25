@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+USAGE="usage: bipolar-delegate-submit [--workspace <abs path>] [--mode task|text] [--agent <id>] [--tier <tier>] [--timeout <s>] [--dry-run] <<'EOF_TASK' ... EOF_TASK"
+BODY_JS='const fs = require("fs");
+const [taskFile, bodyFile, workspace, mode, agent, tier, dryRun, timeoutS] = process.argv.slice(1);
+const text = fs.readFileSync(taskFile, "utf8");
+const body = { task: text.endsWith("\n") ? text.slice(0, -1) : text, workspace, mode };
+if (agent) body.agent_id = agent;
+if (tier) body.tier_hint = tier;
+if (dryRun) body.dry_run = true;
+if (timeoutS) body.timeout_s = Number(timeoutS);
+fs.writeFileSync(bodyFile, JSON.stringify(body));'
+BODY_PY='import json, sys
+task_file, body_file, workspace, mode, agent, tier, dry_run, timeout_s = sys.argv[1:9]
+text = open(task_file, encoding="utf-8", newline="").read()
+body = {"task": text[:-1] if text.endswith("\n") else text, "workspace": workspace, "mode": mode}
+body.update({key: value for key, value in (("agent_id", agent), ("tier_hint", tier)) if value})
+body.update({"dry_run": True} if dry_run else {})
+body.update({"timeout_s": int(timeout_s)} if timeout_s else {})
+json.dump(body, open(body_file, "w", encoding="utf-8"))'
+
+usage_error() {
+  echo "bipolar-delegate-submit: $1"
+  echo "$USAGE"
+  exit 64
+}
+
+set_option() {
+  case "$1" in
+    --workspace) WORKSPACE=$2 ;;
+    --mode) MODE=$2 ;;
+    --agent) AGENT=$2 ;;
+    --tier) TIER=$2 ;;
+    --timeout) TIMEOUT_S=$2 ;;
+  esac
+}
+
+parse_flags() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) DRY_RUN=1; shift ;;
+      --workspace|--mode|--agent|--tier|--timeout)
+        [ $# -ge 2 ] || usage_error "$1 needs a value"
+        set_option "$1" "$2"; shift 2 ;;
+      *) usage_error "unknown argument: $1" ;;
+    esac
+  done
+}
+
+check_timeout() {
+  [ -z "$TIMEOUT_S" ] && return 0
+  [[ $TIMEOUT_S =~ ^[0-9]+$ ]] && [ "$TIMEOUT_S" -ge 60 ] && [ "$TIMEOUT_S" -le 3600 ] && return 0
+  usage_error "--timeout takes a whole number of seconds from 60 to 3600, got '$TIMEOUT_S'"
+}
+
+# Git Bash's pwd gives /c/..., which Python on a Windows server does not treat as absolute
+native_cwd() {
+  pwd -W 2>/dev/null || cygpath -m "$PWD" 2>/dev/null || pwd
+}
+
+make_body_dir() {
+  BODY_DIR=$(mktemp -d) || exit 1
+  trap 'rm -rf "$BODY_DIR"' EXIT
+  # Native node/python/curl on Windows cannot open Git Bash's /tmp paths
+  command -v cygpath >/dev/null && BODY_DIR=$(cygpath -m "$BODY_DIR")
+  TASK_FILE="$BODY_DIR/task.txt" BODY="$BODY_DIR/body.json"
+}
+
+read_task() {
+  cat > "$TASK_FILE"
+  grep -q '[^[:space:]]' "$TASK_FILE" || usage_error "empty task: pass it on stdin through a single-quoted heredoc"
+}
+
+build_body() {
+  node -e "$BODY_JS" "$@" 2>/dev/null || python3 -c "$BODY_PY" "$@" 2>/dev/null || python -c "$BODY_PY" "$@"
+}
+
+post_job() {
+  local response
+  # X-Bipolar-Depth forwards the inherited depth so the broker's own guard refuses nested jobs
+  response=$(curl -s -w '\n%{http_code}' -X POST -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" \
+    -H "X-Bipolar-Depth: ${BIPOLAR_DELEGATION_DEPTH:-0}" --data-binary @"$BODY" "$BIPOLAR_URL/api/delegate/jobs")
+  bipolar_split_response "$response"
+  [ "$HTTP_CODE" = 000 ] && bipolar_unreachable
+  printf '%s\nHTTP %s\n' "$HTTP_BODY" "$HTTP_CODE"
+}
+
+WORKSPACE= MODE=task AGENT= TIER= DRY_RUN= TIMEOUT_S=
+parse_flags "$@"
+check_timeout
+bipolar_load_config
+make_body_dir
+read_task
+[ -n "$WORKSPACE" ] || WORKSPACE=$(native_cwd)
+build_body "$TASK_FILE" "$BODY" "$WORKSPACE" "$MODE" "$AGENT" "$TIER" "$DRY_RUN" "$TIMEOUT_S" \
+  || { echo "could not build the JSON body: needs node or python"; exit 79; }
+post_job

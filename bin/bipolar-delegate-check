@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+print_health() {
+  local health
+  health=$(curl -s --max-time 10 "$BIPOLAR_URL/api/health") || bipolar_unreachable
+  printf '%s\n' "$health"
+}
+
+# /api/health is public: only an authenticated /api route proves the key
+check_api_key() {
+  local code
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/delegate/jobs?limit=1")
+  case "$code" in
+    200) ;;
+    401) echo "bipolar-code rejected the API key on /api (HTTP 401): run /bipolar:setup with the full API key"; exit 81 ;;
+    *) echo "key check failed: GET /api/delegate/jobs answered HTTP $code"; exit 84 ;;
+  esac
+}
+
+bipolar_refuse_when_delegated
+bipolar_load_config
+print_health
+check_api_key

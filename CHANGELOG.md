@@ -59,6 +59,20 @@
   a clear message when neither exists (Git Bash can list that folder as
   `/Users/<you>/.local/bin`, which does not resolve). `/bipolar:setup` reports
   which `claude` it resolves.
+- The shell logic moved out of the markdown into scripts under `bin/`, which
+  Claude Code puts on the Bash tool's `PATH`: `bipolar-delegate-check`,
+  `bipolar-delegate-submit` (task on stdin, flags as options; prints the reply
+  and a last `HTTP <code>` line), `bipolar-delegate-wait`,
+  `bipolar-delegate-cancel`, `bipolar-rescue-check`, `bipolar-rescue-run` (task
+  on stdin; appends the no-delegation line) and `bipolar-setup-verify`, sharing
+  `lib/common.sh`. The command and agent now call them by name instead of
+  asking the model to copy long blocks exactly. `bipolar-delegate-submit`
+  refuses a `--timeout` outside 60-3600, an unknown flag or an empty task
+  (exit 64) before any request, and reports an unreachable server (exit 82);
+  `bipolar-rescue-run` also applies the recursion guard and the config check.
+  `.gitattributes` keeps the scripts LF on Windows checkouts. The tests run the
+  scripts against a stdlib HTTP stub and a fake `claude`, plus the markdown's
+  blocks as written.
 
 ## 0.2.0 — 2026-09-10
 

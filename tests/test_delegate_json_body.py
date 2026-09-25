@@ -3,58 +3,58 @@ import os
 import re
 import unittest
 
-from shell_blocks import block_containing, run_with_fakes
+from harness import StubServer, closed_port_url, command, compact_json, curl_calls, output, run
 
-DELEGATE = "commands/delegate.md"
-TASK_PLACEHOLDER = re.compile(r"<task text[^>\n]*>")
+SUBMIT = "bipolar-delegate-submit"
+JOBS_PATH = "/api/delegate/jobs"
 WORKSPACE = "C:/personal/some repo"
 TRICKY_TASK = "\n".join([
     "don't touch `x` $(id) \"q\" and ${HOME}",
-    "it's JS: const s = 'a' + `${b}`; path C:\\tmp\\$USER \\n stays",
+    "it's JS: const s = 'a' + `${b}`; path C:\tmp\$USER \n stays",
     "line3 ünïcode",
 ])
+QUEUED = (200, compact_json({"id": "job-1", "status": "queued"}))
 BODY_ARGUMENT = re.compile(r"--data-binary @(\S+)")
+NODE_MISSING = "node() { return 127; }\nexport -f node\n"
 
 
-def submit_block(task=TRICKY_TASK, **options):
-    block = block_containing(DELEGATE, "-X POST")
-    block = TASK_PLACEHOLDER.sub(lambda _: task, block, count=1)
-    for name, value in {"WORKSPACE": f"'{WORKSPACE}'", **options}.items():
-        block = re.sub(rf"(?<![\w$]){name}=\S*", f"{name}={value}", block, count=1)
-    return block
+def submit(*flags, task=TRICKY_TASK, prelude="", reply=QUEUED, **overrides):
+    with StubServer({("POST", JOBS_PATH): reply}) as server:
+        result = run(command(SUBMIT, "--workspace", WORKSPACE, *flags), stdin=task + "\n",
+                     prelude=prelude, **{"BIPOLAR_URL": server.url, **overrides})
+    return result, server.requests
 
 
-def posted_body(run):
-    return json.loads(run.curl_body)
+def posted_body(requests):
+    return json.loads(requests[0].body)
 
 
-def posted_body_path(run):
-    call = next(call for call in run.calls if call.startswith("curl "))
-    return BODY_ARGUMENT.search(call).group(1)
+def posted_body_path(result):
+    return BODY_ARGUMENT.search(curl_calls(result)[0]).group(1)
 
 
 class DelegateJsonBodyTest(unittest.TestCase):
     def test_task_is_posted_byte_for_byte(self):
-        run = run_with_fakes(submit_block())
+        result, requests = submit()
 
-        self.assertEqual(run.completed.returncode, 0, run.completed.stderr)
-        self.assertEqual(posted_body(run)["task"], TRICKY_TASK)
+        self.assertEqual(result.completed.returncode, 0, output(result.completed))
+        self.assertEqual(posted_body(requests)["task"], TRICKY_TASK)
 
     def test_body_is_sent_from_a_file_not_inline(self):
-        run = run_with_fakes(submit_block())
+        result, _ = submit()
 
-        self.assertIsNotNone(posted_body_path(run))
-        self.assertNotIn("don't", "\n".join(run.calls))
+        self.assertIsNotNone(posted_body_path(result))
+        self.assertNotIn("don't", "\n".join(result.calls))
 
     def test_default_body_carries_only_task_workspace_and_mode(self):
-        run = run_with_fakes(submit_block())
+        _, requests = submit()
 
-        self.assertEqual(posted_body(run), {"task": TRICKY_TASK, "workspace": WORKSPACE, "mode": "task"})
+        self.assertEqual(posted_body(requests), {"task": TRICKY_TASK, "workspace": WORKSPACE, "mode": "task"})
 
     def test_flags_add_their_optional_fields(self):
-        run = run_with_fakes(submit_block(MODE="text", AGENT="codex", TIER="complex", DRY_RUN="1"))
+        _, requests = submit("--mode", "text", "--agent", "codex", "--tier", "complex", "--dry-run")
 
-        self.assertEqual(posted_body(run), {
+        self.assertEqual(posted_body(requests), {
             "task": TRICKY_TASK,
             "workspace": WORKSPACE,
             "mode": "text",
@@ -64,28 +64,70 @@ class DelegateJsonBodyTest(unittest.TestCase):
         })
 
     def test_python_builds_the_same_body_when_node_is_missing(self):
-        run = run_with_fakes("node() { return 127; }\n" + submit_block(AGENT="claude"))
+        result, requests = submit("--agent", "claude", prelude=NODE_MISSING)
 
-        self.assertEqual(run.completed.returncode, 0, run.completed.stderr)
-        self.assertEqual(posted_body(run), {
+        self.assertEqual(result.completed.returncode, 0, output(result.completed))
+        self.assertEqual(posted_body(requests), {
             "task": TRICKY_TASK, "workspace": WORKSPACE, "mode": "task", "agent_id": "claude",
         })
 
     def test_timeout_flag_adds_an_integer_timeout_s(self):
-        run = run_with_fakes(submit_block(TIMEOUT_S="1800"))
+        _, requests = submit("--timeout", "1800")
 
-        self.assertEqual(posted_body(run)["timeout_s"], 1800)
+        self.assertEqual(posted_body(requests)["timeout_s"], 1800)
 
     def test_python_adds_the_same_integer_timeout_s(self):
-        run = run_with_fakes("node() { return 127; }\n" + submit_block(TIMEOUT_S="1800"))
+        result, requests = submit("--timeout", "1800", prelude=NODE_MISSING)
 
-        self.assertEqual(run.completed.returncode, 0, run.completed.stderr)
-        self.assertEqual(posted_body(run)["timeout_s"], 1800)
+        self.assertEqual(result.completed.returncode, 0, output(result.completed))
+        self.assertEqual(posted_body(requests)["timeout_s"], 1800)
 
     def test_temporary_files_are_removed_after_posting(self):
-        run = run_with_fakes(submit_block())
+        result, _ = submit()
 
-        self.assertFalse(os.path.exists(posted_body_path(run)))
+        self.assertFalse(os.path.exists(posted_body_path(result)))
+
+
+class DelegateSubmitReplyTest(unittest.TestCase):
+    def test_prints_the_job_and_its_http_code(self):
+        result, _ = submit()
+
+        self.assertEqual(result.completed.stdout.splitlines()[-2:], [QUEUED[1], "HTTP 200"])
+
+    def test_shows_a_rejected_key_as_http_401(self):
+        result, _ = submit(reply=(401, compact_json({"detail": "API key inválida o faltante"})))
+
+        self.assertEqual(result.completed.stdout.splitlines()[-1], "HTTP 401")
+
+    def test_reports_an_unreachable_server(self):
+        result, _ = submit(BIPOLAR_URL=closed_port_url())
+
+        self.assertEqual(result.completed.returncode, 82, output(result.completed))
+        self.assertIn("unreachable", result.completed.stdout)
+
+
+class DelegateSubmitUsageTest(unittest.TestCase):
+    def assert_refused_before_any_request(self, result, requests, message):
+        self.assertEqual(result.completed.returncode, 64, output(result.completed))
+        self.assertIn(message, result.completed.stdout)
+        self.assertEqual(requests, [])
+
+    def test_timeout_outside_the_brokers_range_is_refused(self):
+        for value in ("59", "3601", "1.5", "abc"):
+            with self.subTest(value=value):
+                result, requests = submit("--timeout", value)
+
+                self.assert_refused_before_any_request(result, requests, "60 to 3600")
+
+    def test_an_empty_task_is_refused(self):
+        result, requests = submit(task=" \n")
+
+        self.assert_refused_before_any_request(result, requests, "empty task")
+
+    def test_an_unknown_flag_is_refused(self):
+        result, requests = submit("--model", "x")
+
+        self.assert_refused_before_any_request(result, requests, "unknown argument: --model")
 
 
 if __name__ == "__main__":

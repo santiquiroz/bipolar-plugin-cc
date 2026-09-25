@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+RUNNING_RE='"running" *: *true' HEALTHY_RE='"healthy" *: *true'
+
+# /v1/models is no health check: it answers a static list even with llama-server stopped
+fetch_llama_status() {
+  local response
+  response=$(curl -s --max-time 10 -w '\n%{http_code}' -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/llamacpp/status")
+  bipolar_split_response "$response"
+}
+
+check_http_code() {
+  case "$HTTP_CODE" in
+    200) ;;
+    401) echo "bipolar-code rejected the API key on /api (HTTP 401): run /bipolar:setup with the full API key"; exit 81 ;;
+    000) bipolar_unreachable ;;
+    *) printf '%s\n' "$HTTP_BODY"; echo "llama.cpp status unavailable (HTTP $HTTP_CODE)"; exit 84 ;;
+  esac
+}
+
+check_llama_server() {
+  [[ $HTTP_BODY =~ $RUNNING_RE ]] || { echo "llama-server is not running: start it in bipolar-code -> Providers -> llama.cpp -> Iniciar"; exit 83; }
+  [[ $HTTP_BODY =~ $HEALTHY_RE ]] || { echo "llama-server is running but not healthy yet (loading the model or stuck): retry in a minute or check its logs in bipolar-code"; exit 83; }
+  echo "llama-server ready: $HTTP_BODY"
+}
+
+bipolar_refuse_when_delegated
+bipolar_load_config
+fetch_llama_status
+check_http_code
+check_llama_server

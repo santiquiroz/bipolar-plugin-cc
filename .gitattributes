@@ -1,0 +1,3 @@
+# Scripts run by bash on every OS: a CRLF checkout would break them
+bin/* text eol=lf
+lib/*.sh text eol=lf

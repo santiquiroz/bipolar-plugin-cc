@@ -63,7 +63,9 @@ What `/bipolar:delegate` reports: job status (`succeeded`, `failed`, `timeout`, 
 
 ## Tests
 
-The shell blocks the command and the agent tell Claude to run are tested with fakes for `curl` and `claude` (no server, no real CLI): `python -m unittest discover -s tests -v`. Needs `bash` (Git Bash on Windows).
+The shell logic lives in scripts under `bin/` (Claude Code puts each enabled plugin's `bin/` on the Bash tool's `PATH`), so Claude runs the same tested code every time instead of re-typing it from the markdown: `bipolar-delegate-check`, `bipolar-delegate-submit`, `bipolar-delegate-wait`, `bipolar-delegate-cancel`, `bipolar-rescue-check`, `bipolar-rescue-run` and `bipolar-setup-verify`. They need `bash` and `curl` (Git Bash on Windows).
+
+The tests run those scripts against a stub HTTP server from Python's standard library and a fake `claude` on `PATH` (no bipolar-code, no real CLI, no network beyond 127.0.0.1): `python -m unittest discover -s tests -v`. They also run the command and agent markdown's bash blocks as written.
 
 ## License
 

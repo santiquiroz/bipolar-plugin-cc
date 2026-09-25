@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+# Below the Bash tool's 600 s ceiling, so this script always gets to report
+TIME_CAP_S=570
+CLOSING_NOTE='Trabaja solo con las instrucciones dadas. No delegues. No hagas commits.'
+
+find_claude() {
+  CLAUDE_BIN=$(bipolar_resolve_claude) && return 0
+  echo "claude CLI not found on PATH nor at $HOME/.local/bin/claude.exe: install Claude Code or add its folder to PATH"
+  exit 79
+}
+
+read_task() {
+  TASK=$(cat)
+  [[ $TASK =~ [^[:space:]] ]] && return 0
+  echo "usage: bipolar-rescue-run <<'EOF_TASK' ... EOF_TASK (the task goes on stdin; it was empty)"
+  exit 64
+}
+
+run_child() {
+  BIPOLAR_DELEGATION_DEPTH=1 ANTHROPIC_BASE_URL="$BIPOLAR_URL" ANTHROPIC_API_KEY="$BIPOLAR_API_KEY" \
+  GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" \
+  timeout "$TIME_CAP_S" "$CLAUDE_BIN" -p \
+    --model claude-sonnet-4-6 \
+    --permission-mode acceptEdits \
+    --settings '{"disableAllHooks":true}' \
+    --strict-mcp-config \
+    --max-turns 50 \
+    --disallowedTools "Task,Agent,Skill,WebSearch,WebFetch" \
+    --output-format text <<<"$TASK"$'\n\n'"$CLOSING_NOTE"
+}
+
+report_exit() {
+  [ "$1" = 124 ] && echo "bipolar-rescue: the child hit the $TIME_CAP_S s cap and was stopped; its edits are partial (check git status / git diff)"
+  exit "$1"
+}
+
+bipolar_refuse_when_delegated
+bipolar_load_config
+find_claude
+read_task
+run_child
+report_exit $?

@@ -15,23 +15,13 @@ BIPOLAR_URL=<url>
 BIPOLAR_API_KEY=<key>
 ```
 
-3. Verify, in order, reporting each result:
+3. Verify, in order, reporting each result. `bipolar-setup-verify` is a script in this plugin's `bin/`, which Claude Code puts on the Bash tool's `PATH`; it reads the file just written (not the environment) and prints (a) the public health, (b) the key's HTTP code on `/api/*`, where `bipolar-rescue` and `/bipolar:delegate` check it (`/v1` also accepts the legacy proxy key), (c) the managed llama-server's status, (d) an end-to-end `/v1/messages` completion with its response headers (`X-Bipolar-Route` says which provider answered) and (e) the claude CLI `bipolar-rescue` launches, resolved the same way it does:
 
 ```bash
-. "$HOME/.config/bipolar-cc/env"
-# a) server version and broker switch (public endpoint: proves nothing about the key)
-echo "health: $(curl -s --max-time 10 "$BIPOLAR_URL/api/health")"
-# b) the key on /api/*, where bipolar-rescue and /bipolar:delegate check it (/v1 also accepts the legacy proxy key)
-echo "api key: HTTP $(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/delegate/jobs?limit=1")"
-# c) the managed llama-server behind the llamacpp provider
-echo "llama.cpp: $(curl -s --max-time 10 -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/llamacpp/status")"
-# d) end-to-end completion; -D - prints the response headers, X-Bipolar-Route says which provider answered
-curl -s -D - -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" \
-  "$BIPOLAR_URL/v1/messages" \
-  -d '{"model":"claude-sonnet-4-6","max_tokens":32,"messages":[{"role":"user","content":"Say OK"}]}'
-# e) the claude CLI bipolar-rescue launches, resolved the same way it does
-echo "claude CLI: $(command -v claude || command -v claude.exe || { [ -x "$HOME/.local/bin/claude.exe" ] && echo "$HOME/.local/bin/claude.exe"; } || echo 'NOT FOUND')"
+bipolar-setup-verify
 ```
+
+Exit 78 → the config file is missing: go back to step 2. Exit 127 (`command not found`) → the plugin's `bin/` is not on `PATH` (plugin disabled, or an older version without `bin/` installed): tell the user to update the plugin and reload Claude Code.
 
 4. Interpret:
    - (a) empty → server unreachable (backend off / wrong IP / off-LAN); stop. Otherwise report `version` and `delegation_enabled`: `/bipolar:delegate` needs version 2.13 or newer and `delegation_enabled:true` (bipolar-code → Agentes → switch "Delegación a agentes CLI" + workspaces permitidos); `bipolar-rescue` works without the broker.

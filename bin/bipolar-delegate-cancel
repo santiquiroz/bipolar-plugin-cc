@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+bipolar_require_job_id "$1"
+JOB_ID=$1
+bipolar_load_config
+RESPONSE=$(curl -s --max-time 20 -w '\n%{http_code}' -X DELETE -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/delegate/jobs/$JOB_ID")
+bipolar_split_response "$RESPONSE"
+[ "$HTTP_CODE" = 000 ] && bipolar_unreachable
+printf '%s\nHTTP %s\n' "$HTTP_BODY" "$HTTP_CODE"

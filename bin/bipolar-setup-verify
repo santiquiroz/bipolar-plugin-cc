@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+CONFIG="$HOME/.config/bipolar-cc/env"
+SMOKE_BODY='{"model":"claude-sonnet-4-6","max_tokens":32,"messages":[{"role":"user","content":"Say OK"}]}'
+
+# The file just written is what gets verified, even when the environment holds other values
+load_config_file() {
+  [ -f "$CONFIG" ] || { echo "no config at $CONFIG: write it first (/bipolar:setup step 2)"; exit 78; }
+  . "$CONFIG"
+}
+
+# a) server version and broker switch (public endpoint: proves nothing about the key)
+report_health() {
+  echo "health: $(curl -s --max-time 10 "$BIPOLAR_URL/api/health")"
+}
+
+# b) the key on /api/*, where bipolar-rescue and /bipolar:delegate check it (/v1 also accepts the legacy proxy key)
+report_api_key() {
+  echo "api key: HTTP $(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/delegate/jobs?limit=1")"
+}
+
+# c) the managed llama-server behind the llamacpp provider
+report_llama_server() {
+  echo "llama.cpp: $(curl -s --max-time 10 -H "x-api-key: $BIPOLAR_API_KEY" "$BIPOLAR_URL/api/llamacpp/status")"
+}
+
+# d) end-to-end completion; -D - prints the response headers, X-Bipolar-Route says which provider answered
+report_smoke() {
+  curl -s -D - -H "x-api-key: $BIPOLAR_API_KEY" -H "content-type: application/json" \
+    "$BIPOLAR_URL/v1/messages" -d "$SMOKE_BODY"
+  echo
+}
+
+# e) the claude CLI bipolar-rescue-run launches, resolved the same way it does
+report_claude() {
+  echo "claude CLI: $(bipolar_resolve_claude || echo 'NOT FOUND')"
+}
+
+load_config_file
+report_health
+report_api_key
+report_llama_server
+report_smoke
+report_claude

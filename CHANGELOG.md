@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-09-26
 
 - Recursion guard: `/bipolar:delegate` forwards `BIPOLAR_DELEGATION_DEPTH` as
   `X-Bipolar-Depth` (it was hardcoded to 0) and, like `bipolar-rescue`, refuses

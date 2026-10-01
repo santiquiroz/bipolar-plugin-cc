@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 — 2026-10-01
+
+- `/bipolar:delegate` documents Cursor Agent CLI as a broker agent
+  (`--agent cursor`, bipolar-code ≥ 2.15) and the new
+  `cursor_deny_list_missing` skip reason: the server host needs
+  `~/.cursor-rescue/cli-config.json` from cursor-plugin-cc's `/cursor:setup`.
+
 ## 0.3.0 — 2026-09-26
 
 - Recursion guard: `/bipolar:delegate` forwards `BIPOLAR_DELEGATION_DEPTH` as

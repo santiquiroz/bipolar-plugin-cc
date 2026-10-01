@@ -1,6 +1,6 @@
 ---
-description: Delegate a coding task to the best available CLI agent through bipolar-code's delegation broker (claude, codex, copilot, agy or ollama picked by tier and quota)
-argument-hint: "[--workspace <abs path>] [--agent claude|codex|copilot|antigravity|ollama] [--mode task|text] [--tier trivial|simple|standard|complex] [--timeout <s>] [--dry-run] <task>"
+description: Delegate a coding task to the best available CLI agent through bipolar-code's delegation broker (claude, codex, copilot, agy, cursor or ollama picked by tier and quota)
+argument-hint: "[--workspace <abs path>] [--agent claude|codex|copilot|antigravity|cursor|ollama] [--mode task|text] [--tier trivial|simple|standard|complex] [--timeout <s>] [--dry-run] <task>"
 allowed-tools: Bash
 ---
 
@@ -56,7 +56,7 @@ Interpret the response:
 - 400 `workspace_missing` → the path does not exist on the server host. From another PC the local path usually does not exist there: tell the user that `--mode task` needs the repo at that same path on the server host, or offer `--mode text`. Stop.
 - 400 `workspace_not_dir` → the path is a file, not a directory; ask the user for the project directory. Stop.
 - 400 `workspace_forbidden` → the broker never runs agents in a drive root, the home directory, bipolar-code's config dir or anything inside `.git`; ask the user for the project directory. Stop.
-- 400 `no_agent_available` → show `reasons` and `skipped` (each entry says why an agent was skipped: `disabled`, `not_installed`, `exhausted:quota_exhausted`, `busy`, `tier_unsupported`, `agy_deny_list_missing`). Stop; the caller decides another lane.
+- 400 `no_agent_available` → show `reasons` and `skipped` (each entry says why an agent was skipped: `disabled`, `not_installed`, `exhausted:quota_exhausted`, `busy`, `tier_unsupported`, `agy_deny_list_missing`, `cursor_deny_list_missing`). Stop; the caller decides another lane. `cursor_deny_list_missing` means the server host lacks `~/.cursor-rescue/cli-config.json`: run `/cursor:setup` from the cursor plugin (cursor-plugin-cc) on that host.
 - 409 `delegation_disabled` / `recursion_guard`, 429 `too_many_jobs` → report verbatim and stop.
 - 422 → the broker rejected a field (e.g. `timeout_s` outside 60-3600); report its `detail` and stop.
 

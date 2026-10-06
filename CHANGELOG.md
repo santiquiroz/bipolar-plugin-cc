@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-10-06
+
+- `/bipolar:delegate` documents DeepSeek Harness (`dsh`) as a broker agent
+  (`--agent deepseek`, bipolar-code ≥ 2.16). It is the first agent of every
+  tier on a fresh install; it needs the DeepSeek Harness desktop app signed in
+  on the server host, or `DEEPSEEK_API_KEY` in the server's environment
+  (otherwise it is skipped with `auth_error`).
+
 ## 0.4.0 — 2026-10-01
 
 - `/bipolar:delegate` documents Cursor Agent CLI as a broker agent

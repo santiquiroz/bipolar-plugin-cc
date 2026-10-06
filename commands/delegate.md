@@ -1,6 +1,6 @@
 ---
-description: Delegate a coding task to the best available CLI agent through bipolar-code's delegation broker (claude, codex, copilot, agy, cursor or ollama picked by tier and quota)
-argument-hint: "[--workspace <abs path>] [--agent claude|codex|copilot|antigravity|cursor|ollama] [--mode task|text] [--tier trivial|simple|standard|complex] [--timeout <s>] [--dry-run] <task>"
+description: Delegate a coding task to the best available CLI agent through bipolar-code's delegation broker (deepseek, claude, codex, copilot, agy, cursor or ollama picked by tier and quota)
+argument-hint: "[--workspace <abs path>] [--agent deepseek|claude|codex|copilot|antigravity|cursor|ollama] [--mode task|text] [--tier trivial|simple|standard|complex] [--timeout <s>] [--dry-run] <task>"
 allowed-tools: Bash
 ---
 

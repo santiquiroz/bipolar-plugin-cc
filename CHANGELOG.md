@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — 2026-10-07
+
+- Docs stand on their own, without a multi-delegate setup: README rewritten (no lanes, no named fallbacks) with When it helps, Configuration, Troubleshooting and Using it with other delegates sections, plus how to delegate through bipolar-code 2.18's MCP server without the plugin; the `bipolar-rescue` description (no more "Unlike ollama-rescue"), the CLAUDE.md snippet, command fallbacks and plugin descriptions made neutral. No behavior change.
+
 ## 0.5.0 — 2026-10-06
 
 - `/bipolar:delegate` documents DeepSeek Harness (`dsh`) as a broker agent

@@ -1,6 +1,6 @@
 ---
-description: Delegate a coding task to the best available CLI agent through bipolar-code's delegation broker (deepseek, claude, codex, copilot, agy, cursor or ollama picked by tier and quota)
-argument-hint: "[--workspace <abs path>] [--agent deepseek|claude|codex|copilot|antigravity|cursor|ollama] [--mode task|text] [--tier trivial|simple|standard|complex] [--timeout <s>] [--dry-run] <task>"
+description: Delegate a coding task to the best available CLI agent through bipolar-code's delegation broker (muse, claude, codex, copilot, agy, cursor, ollama or deepseek picked by tier and quota)
+argument-hint: "[--workspace <abs path>] [--agent muse|claude|codex|copilot|antigravity|cursor|ollama|deepseek] [--mode task|text] [--tier trivial|simple|standard|complex] [--timeout <s>] [--dry-run] <task>"
 allowed-tools: Bash
 ---
 
@@ -56,7 +56,7 @@ Interpret the response:
 - 400 `workspace_missing` → the path does not exist on the server host. From another PC the local path usually does not exist there: tell the user that `--mode task` needs the repo at that same path on the server host, or offer `--mode text`. Stop.
 - 400 `workspace_not_dir` → the path is a file, not a directory; ask the user for the project directory. Stop.
 - 400 `workspace_forbidden` → the broker never runs agents in a drive root, the home directory, bipolar-code's config dir or anything inside `.git`; ask the user for the project directory. Stop.
-- 400 `no_agent_available` → show `reasons` and `skipped` (each entry says why an agent was skipped: `disabled`, `not_installed`, `exhausted:quota_exhausted`, `busy`, `tier_unsupported`, `agy_deny_list_missing`, `cursor_deny_list_missing`). Stop; the caller decides another lane. `cursor_deny_list_missing` means the server host lacks `~/.cursor-rescue/cli-config.json`: run `/cursor:setup` from the cursor plugin (cursor-plugin-cc) on that host.
+- 400 `no_agent_available` → show `reasons` and `skipped` (each entry says why an agent was skipped: `disabled`, `not_installed`, `exhausted:quota_exhausted`, `busy`, `tier_unsupported`, `agy_deny_list_missing`, `cursor_deny_list_missing`). Stop; report it to the user so they can choose another route. `cursor_deny_list_missing` means the server host lacks `~/.cursor-rescue/cli-config.json`: run `/cursor:setup` from the cursor plugin (cursor-plugin-cc) on that host.
 - 409 `delegation_disabled` / `recursion_guard`, 429 `too_many_jobs` → report verbatim and stop.
 - 422 → the broker rejected a field (e.g. `timeout_s` outside 60-3600); report its `detail` and stop.
 
@@ -80,7 +80,7 @@ bipolar-delegate-cancel <id>
 
 The reply is the job with `status: cancelled`; the broker kills the agent's process tree. Edits already made stay in the working tree: tell the user to review `git status` / `git diff`. A last line `HTTP 404` means the job is already gone.
 
-Step 4 — Report. From the final job JSON give: `status` (`succeeded`, `failed`, `timeout`, `cancelled`, `quota`, `auth_error`), `agent_id` and `model`, one line per attempt (`agent_id`, `signal`, `duration_s`, `error`), `files_touched`, and `output_tail` verbatim; when `output_tail` is empty, give the job's `error` instead. When `status` is `quota`, say which agents were tried and what the last quota excerpt was; the caller decides whether another lane or inline work follows. When the output is truncated, offer `GET /api/delegate/jobs/<id>/output` for the full log.
+Step 4 — Report. From the final job JSON give: `status` (`succeeded`, `failed`, `timeout`, `cancelled`, `quota`, `auth_error`), `agent_id` and `model`, one line per attempt (`agent_id`, `signal`, `duration_s`, `error`), `files_touched`, and `output_tail` verbatim; when `output_tail` is empty, give the job's `error` instead. When `status` is `quota`, say which agents were tried and what the last quota excerpt was; report it to the user so they can choose another route. When the output is truncated, offer `GET /api/delegate/jobs/<id>/output` for the full log.
 
 Rules:
 
